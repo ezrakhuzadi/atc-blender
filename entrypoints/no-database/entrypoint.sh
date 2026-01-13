@@ -1,11 +1,9 @@
 #!/bin/bash
 
-source .venv/bin/activate
+# Virtual environment is already activated via PATH in Dockerfile
 
-echo Waiting for DBs...
-if ! wait-for-it --parallel --service $REDIS_HOST:$REDIS_PORT; then
-    exit
-fi
+echo "Waiting for DBs..."
+wait-for-it $REDIS_HOST:$REDIS_PORT --timeout=30 -- echo "Redis is up"
 
 # Collect static files
 #echo "Collect static files"
@@ -18,3 +16,4 @@ python manage.py migrate
 # Start server
 echo "Starting server"
 uvicorn flight_blender.asgi:application --host 0.0.0.0 --port 8000 --workers 3 --reload
+
