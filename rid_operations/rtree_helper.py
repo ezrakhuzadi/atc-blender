@@ -16,12 +16,28 @@ class OperationalIntentComparisonFactory:
         return polygon_a.equals(polygon_b)  # Also has exact_equals and almost_equals method
 
     def check_volume_start_end_time_same(self, time_a: Time, time_b: Time) -> bool:
-        # TODO: Implement checking of two times
-        return True
+        try:
+            return arrow.get(time_a.value) == arrow.get(time_b.value)
+        except Exception:
+            return False
 
     def check_volume_(self, altitude_a: Altitude, altitude_b: Altitude) -> bool:
-        # TODO: Implement checking of two altitudes
-        return True
+        if altitude_a.reference != altitude_b.reference:
+            return False
+
+        value_a = self._to_meters(altitude_a)
+        value_b = self._to_meters(altitude_b)
+        if value_a is None or value_b is None:
+            return False
+        return abs(value_a - value_b) < 1e-6
+
+    def _to_meters(self, altitude: Altitude) -> float | None:
+        units = altitude.units.upper()
+        if units in ["M", "METER", "METERS"]:
+            return float(altitude.value)
+        if units in ["FT", "FEET"]:
+            return float(altitude.value) * 0.3048
+        return None
 
 
 class OperationalIntentsIndexFactory:

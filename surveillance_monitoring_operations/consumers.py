@@ -13,7 +13,17 @@ class HomeConsumer(WebsocketConsumer):
         logger.info(f"WebSocket disconnected with code: {close_code}")
 
     def receive(self, text_data):
-        pass
+        try:
+            payload = json.loads(text_data) if text_data else {}
+        except json.JSONDecodeError:
+            payload = {}
+
+        message_type = payload.get("type")
+        if message_type == "ping":
+            self.send(text_data=json.dumps({"type": "pong"}))
+            return
+
+        self.send(text_data=json.dumps({"message": "Message received", "payload": payload}))
 
 
 class TrackConsumer(AsyncWebsocketConsumer):

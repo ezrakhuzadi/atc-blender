@@ -17,7 +17,8 @@ class State:
         return self._value
 
     def on_event(self, event):
-        pass
+        logger.debug("No transition for event %s in state %s", event, self)
+        return self
 
     def __repr__(self):
         return self.__str__()

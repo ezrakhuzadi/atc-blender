@@ -673,8 +673,18 @@ class OperationalIntentReferenceHelper:
         )
         return o_i_d
 
-    def update_ovn_in_stored_opint_ref(self):
-        pass
+    def update_ovn_in_stored_opint_ref(self, flight_declaration_id: str, ovn: str) -> bool:
+        my_database_reader = FlightBlenderDatabaseReader()
+        my_database_writer = FlightBlenderDatabaseWriter()
+        flight_operational_intent_reference = my_database_reader.get_flight_operational_intent_reference_by_flight_declaration_id(
+            flight_declaration_id=flight_declaration_id
+        )
+        if not flight_operational_intent_reference:
+            return False
+        return my_database_writer.update_flight_operational_intent_reference_ovn(
+            flight_operational_intent_referecne=flight_operational_intent_reference,
+            ovn=ovn,
+        )
 
     def parse_operational_intent_reference_from_dss(self, operational_intent_reference) -> OperationalIntentReferenceDSSResponse:
         time_start = Time(
@@ -1532,7 +1542,41 @@ class SCDOperations:
         for cur_constraint in all_nearby_constraints:
             all_constraint_ovns.append(cur_constraint.reference.ovn)
 
-        # TODO: Check intersection
+        my_ind_volumes_converter = VolumesConverter()
+        my_ind_volumes_converter.convert_volumes_to_geojson(volumes=volumes)
+        ind_volumes_polygon = my_ind_volumes_converter.get_minimum_rotated_rectangle()
+        volume_time_start = my_ind_volumes_converter.get_earliest_time_from_volumes()
+        volume_time_end = my_ind_volumes_converter.get_latest_time_from_volumes()
+
+        constraint_conflict = False
+        if all_nearby_constraints:
+            volume_start = arrow.get(volume_time_start)
+            volume_end = arrow.get(volume_time_end)
+            for constraint in all_nearby_constraints:
+                constraint_converter = VolumesConverter()
+                constraint_converter.convert_volumes_to_geojson(volumes=constraint.details.volumes)
+                constraint_polygon = constraint_converter.get_minimum_rotated_rectangle()
+
+                if not ind_volumes_polygon.intersects(constraint_polygon):
+                    continue
+
+                constraint_start = arrow.get(constraint.reference.time_start.value)
+                constraint_end = arrow.get(constraint.reference.time_end.value)
+                if volume_start <= constraint_end and constraint_start <= volume_end:
+                    constraint_conflict = True
+                    break
+
+        if constraint_conflict:
+            logger.info("Flight not deconflicted, conflicts with constraint volumes.")
+            d_r = OperationalIntentSubmissionStatus(
+                status="conflict_with_constraint",
+                status_code=409,
+                message="Flight not deconflicted, conflicts with constraint volumes",
+                dss_response=OtherError(notes="Flight not deconflicted, conflicts with constraint volumes"),
+                operational_intent_id="",
+                constraints=all_nearby_constraints,
+            )
+            return d_r
 
         if all_existing_operational_intent_details:
             if isinstance(all_existing_operational_intent_details, list):
@@ -1543,11 +1587,6 @@ class SCDOperations:
                 )
             else:
                 logger.info("No operational intent details to check for deconfliction.")
-            my_ind_volumes_converter = VolumesConverter()
-            my_ind_volumes_converter.convert_volumes_to_geojson(volumes=volumes)
-            ind_volumes_polygon = my_ind_volumes_converter.get_minimum_rotated_rectangle()
-            volume_time_start = my_ind_volumes_converter.get_earliest_time_from_volumes()
-            volume_time_end = my_ind_volumes_converter.get_latest_time_from_volumes()
 
             for cur_op_int_detail in all_existing_operational_intent_details:
                 airspace_keys.append(cur_op_int_detail.ovn)

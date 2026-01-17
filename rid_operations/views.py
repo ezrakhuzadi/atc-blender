@@ -2,8 +2,8 @@ import hashlib
 import json
 import time
 import uuid
-from dataclasses import asdict
-from datetime import timedelta
+from dataclasses import asdict, is_dataclass
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -69,12 +69,18 @@ load_dotenv(find_dotenv())
 
 class RIDOutputHelper:
     def make_json_compatible(self, struct: Any) -> Any:
+        if is_dataclass(struct):
+            return {k: self.make_json_compatible(v) for k, v in asdict(struct).items()}
         if isinstance(struct, tuple) and hasattr(struct, "_asdict"):
             return {k: self.make_json_compatible(v) for k, v in struct._asdict().items()}
         elif isinstance(struct, dict):
             return {k: self.make_json_compatible(v) for k, v in struct.items()}
         elif isinstance(struct, str):
             return struct
+        elif isinstance(struct, uuid.UUID):
+            return str(struct)
+        elif isinstance(struct, datetime):
+            return struct.isoformat()
         try:
             return [self.make_json_compatible(v) for v in struct]
         except TypeError:
@@ -116,14 +122,19 @@ class SubscriptionsHelper:
             subscription_duration_seconds=subscription_duration_seconds,
             is_simulated=is_simulated,
         )
-        subscription_response = self.my_rid_output_helper.make_json_compatible(subscription_r)
-        return subscription_response
+        return subscription_r
 
-    def start_ussp_polling(self):
+    def start_ussp_polling(self, session_id: str | None = None, end_time=None) -> bool:
         """
         This method starts the polling of USSP once a subscription has been created
         """
-        pass
+        if not session_id:
+            logger.warning("RID polling not started: missing session_id")
+            return False
+        if not end_time:
+            end_time = arrow.now().shift(seconds=30).datetime
+        run_ussp_polling_for_rid.delay(session_id=session_id, end_time=end_time)
+        return True
 
 
 @api_view(["GET"])
@@ -206,7 +217,8 @@ def get_rid_data(request, subscription_id):
     """This is the GET endpoint for remote id data given a DSS subscription id. Flight Blender will store flight URLs and every time the data is queried, it is mainly used by Flight Spotlight"""
 
     try:
-        UUID(subscription_id, version=4)
+        subscription_id_str = str(subscription_id)
+        UUID(subscription_id_str, version=4)
     except ValueError:
         return HttpResponse(
             "Incorrect UUID passed in the parameters, please send a valid subscription ID",
@@ -218,28 +230,44 @@ def get_rid_data(request, subscription_id):
     flights_dict = {}
     # Get the flights URL from the DSS and put it in
     # reasonably we won't have more than 500 subscriptions active
-    subscription_record_exists = my_database_reader.check_rid_subscription_record_by_subscription_id_exists(subscription_id=subscription_id)
+    subscription_record_exists = my_database_reader.check_rid_subscription_record_by_subscription_id_exists(subscription_id=subscription_id_str)
 
     if subscription_record_exists:
-        subscription_record = my_database_reader.get_rid_subscription_record_by_subscription_id(subscription_id=subscription_id)
-        flights_dict = json.loads(subscription_record.flight_details)
+        subscription_record = my_database_reader.get_rid_subscription_record_by_subscription_id(subscription_id=subscription_id_str)
+        if subscription_record.flight_details:
+            flights_dict = json.loads(subscription_record.flight_details)
         logger.info("Sleeping 2 seconds..")
         time.sleep(2)
 
     if bool(flights_dict):
         # Get the last observation of the flight telemetry
         obs_helper = flight_stream_helper.ObservationReadOperations()
-        all_flights_telemetry_data = obs_helper.get_temporal_flight_observations_by_session(session_id=subscription_id)
-        # Get the latest telemetry
+        all_flights_telemetry_data = obs_helper.get_temporal_flight_observations_by_session(session_id=subscription_id_str)
+        # If no telemetry is present yet, query upstream USSs once to populate it.
+        if not all_flights_telemetry_data:
+            # Reset read cursor so newly written observations are visible immediately.
+            r = get_redis()
+            r.delete(f"last_reading_for_{subscription_id_str}")
+            try:
+                my_rid_helper = dss_rid_helper.RemoteIDOperations()
+                my_rid_helper.query_uss_for_rid(
+                    flight_details=subscription_record.flight_details,
+                    subscription_id=subscription_id_str,
+                    view=subscription_record.view,
+                )
+            except Exception as exc:
+                logger.error(f"Failed to query upstream USSs for session_id {subscription_id}: {exc}")
+
+            all_flights_telemetry_data = obs_helper.get_temporal_flight_observations_by_session(
+                session_id=subscription_id_str
+            )
 
         if not all_flights_telemetry_data:
             logger.error(f"No telemetry data found for session_id {subscription_id}")
-            return
-        return HttpResponse(
-            json.dumps(all_flights_telemetry_data),
-            status=200,
-            content_type=RESPONSE_CONTENT_TYPE,
-        )
+            return HttpResponse(json.dumps([]), status=200, content_type=RESPONSE_CONTENT_TYPE)
+        rid_output = RIDOutputHelper()
+        rid_payload = rid_output.make_json_compatible(all_flights_telemetry_data)
+        return HttpResponse(json.dumps(rid_payload), status=200, content_type=RESPONSE_CONTENT_TYPE)
     else:
         return HttpResponse(json.dumps({}), status=404, content_type=RESPONSE_CONTENT_TYPE)
 

@@ -308,11 +308,13 @@ class RemoteIDOperations:
                 "content-type": RESPONSE_CONTENT_TYPE,
                 "Authorization": "Bearer " + auth_credentials["access_token"],
             }
+            response = None
             try:
                 response = requests.post(url, headers=headers, json=json.loads(json.dumps(payload)))
             except Exception as re:
                 logger.error(f"Error in sending subscriber notification to {url} :  {re} ")
-            if response.status_code == 204:
+                continue
+            if response is not None and response.status_code == 204:
                 logger.info("Successfully notified subscriber %s" % url)
 
         logger.info("Successfully created a DSS ISA %s" % new_isa_id)
@@ -451,7 +453,34 @@ class RemoteIDOperations:
     def delete_dss_subscription(self, subscription_id: str):
         """This module calls the DSS to delete a subscription"""
 
-        pass
+        my_authorization_helper = dss_auth_helper.AuthorityCredentialsGetter()
+        audience = env.get("DSS_SELF_AUDIENCE", "000")
+        try:
+            auth_token = my_authorization_helper.get_cached_credentials(audience=audience, token_type="rid")
+        except Exception as e:
+            logger.error("Error in getting Authority Access Token %s " % e)
+            return False
+
+        headers = {
+            "content-type": RESPONSE_CONTENT_TYPE,
+            "Authorization": "Bearer " + auth_token["access_token"],
+        }
+        dss_subscription_url = self.dss_base_url + "rid/v2/dss/subscriptions/" + subscription_id
+        try:
+            dss_r = requests.delete(dss_subscription_url, headers=headers)
+        except Exception as re:
+            logger.error("Error in deleting DSS subscription %s " % re)
+            return False
+
+        if dss_r.status_code not in [200, 204]:
+            logger.error("Error in deleting subscription in the DSS %s" % dss_r.text)
+            return False
+
+        my_database_reader = FlightBlenderDatabaseReader()
+        if my_database_reader.check_rid_subscription_record_by_subscription_id_exists(subscription_id=subscription_id):
+            subscription_record = my_database_reader.get_rid_subscription_record_by_subscription_id(subscription_id=subscription_id)
+            subscription_record.delete()
+        return True
 
     def query_uss_for_rid_details(self, rid_flight_details_query_url: str, flight_id: str, headers: dict):
         """

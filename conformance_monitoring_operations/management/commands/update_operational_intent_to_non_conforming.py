@@ -8,6 +8,7 @@ from common.database_operations import FlightBlenderDatabaseReader, FlightBlende
 from scd_operations.dss_scd_helper import OperationalIntentReferenceHelper, SCDOperations
 from scd_operations.scd_data_definitions import (
     OperationalIntentReferenceDSSResponse,
+    OperationalIntentUSSDetails,
     Time,
 )
 
@@ -116,8 +117,6 @@ class Command(BaseCommand):
             subscription_id=stored_subscription_id,
         )
         if not dry_run:
-            flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://localhost:8000")
-
             operational_update_response = my_scd_dss_helper.update_specified_operational_intent_reference(
                 subscription_id=stored_subscription_id,
                 operational_intent_ref_id=str(reference.id),
@@ -130,35 +129,39 @@ class Command(BaseCommand):
             )
 
             if operational_update_response.status == 200:
-                # Update was successful
-                new_operational_intent_details = operational_update_response.dss_response
-                op_int_details["success_response"]["operational_intent_details"] = new_operational_intent_details
-                # TODO: Update the intent reference and intent details in the database
-
-                my_database_writer.update_flight_operational_intent_reference(
-                    flight_operational_intent_reference=flight_operational_intent_reference,
-                    update_operational_intent_reference=operational_intent_update_job.dss_response.operational_intent_reference,
-                )
-                updated_flight_operational_intent_details = OperationalIntentUSSDetails(
-                    volumes=flight_planning_volumes, off_nominal_volumes=flight_planning_off_nominal_volumes, priority=flight_planning_priority
-                )
-
-                my_database_writer.update_flight_operational_intent_details(
-                    flight_operational_intent_detail=flight_operational_intent_details,
-                    operational_intent_details=updated_flight_operational_intent_details,
-                )
-
-                my_scd_dss_helper.process_peer_uss_notifications(
-                    all_subscribers=operational_intent_update_job.dss_response.subscribers,
-                    operational_intent_details=flight_planning_notification_payload,
-                    operational_intent_reference=operational_intent_update_job.dss_response.operational_intent_reference,
-                    operational_intent_id=dss_operational_intent_reference_id,
-                )
-
                 logger.info(
                     "Successfully updated operational intent status for {operational_intent_id} on the DSS".format(
                         operational_intent_id=operational_intent_id
                     )
+                )
+                flight_operational_intent_reference = my_database_reader.get_flight_operational_intent_reference_by_flight_declaration_id(
+                    flight_declaration_id=flight_declaration_id
+                )
+                if flight_operational_intent_reference:
+                    my_database_writer.update_flight_operational_intent_reference(
+                        flight_operational_intent_reference=flight_operational_intent_reference,
+                        update_operational_intent_reference=operational_update_response.dss_response.operational_intent_reference,
+                    )
+
+                flight_operational_intent_details = my_database_reader.get_operational_intent_details_by_flight_declaration_id(
+                    declaration_id=flight_declaration_id
+                )
+                if flight_operational_intent_details:
+                    updated_flight_operational_intent_details = OperationalIntentUSSDetails(
+                        volumes=stored_volumes,
+                        off_nominal_volumes=stored_off_nominal_volumes or [],
+                        priority=stored_priority,
+                    )
+                    my_database_writer.update_flight_operational_intent_details(
+                        flight_operational_intent_detail=flight_operational_intent_details,
+                        operational_intent_details=updated_flight_operational_intent_details,
+                    )
+
+                my_scd_dss_helper.process_peer_uss_notifications(
+                    all_subscribers=operational_update_response.dss_response.subscribers,
+                    operational_intent_details=details_full,
+                    operational_intent_reference=operational_update_response.dss_response.operational_intent_reference,
+                    operational_intent_id=operational_intent_id,
                 )
 
             else:

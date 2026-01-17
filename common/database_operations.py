@@ -37,6 +37,7 @@ from flight_declaration_operations.models import (
     PeerOperationalIntentReference,
     Subscriber,
 )
+from flight_declaration_operations.utils import OperationalIntentsConverter
 from flight_feed_operations.data_definitions import SingleAirtrafficObservation
 from flight_feed_operations.models import FlightObservation
 from geo_fence_operations.data_definitions import GeofencePayload
@@ -852,7 +853,10 @@ class FlightBlenderDatabaseWriter:
         try:
             flight_declaration = FlightDeclaration.objects.get(id=flight_declaration_id)
             flight_declaration.operational_intent = json.dumps(asdict(operational_intent))
-            # TODO: Convert the updated operational intent to GeoJSON
+            my_operational_intent_converter = OperationalIntentsConverter()
+            my_operational_intent_converter.convert_operational_intent_to_geo_json(volumes=operational_intent.volumes)
+            flight_declaration.flight_declaration_raw_geojson = json.dumps(my_operational_intent_converter.geo_json, cls=EnhancedJSONEncoder)
+            flight_declaration.bounds = my_operational_intent_converter.get_geo_json_bounds()
             flight_declaration.save()
             return True
         except Exception:

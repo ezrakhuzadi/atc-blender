@@ -209,9 +209,11 @@ class FlightBlenderConformanceEngine:
             return ConformanceChecksList.C11
         # The time the most recent telemetry was sent
         latest_telemetry_datetime = flight_declaration.latest_telemetry_datetime
-        # Check the current time is within the start / end date time +/- 15 seconds TODO: trim this window as it is to broad
-        fifteen_seconds_before_now = now.shift(seconds=-15)
-        fifteen_seconds_after_now = now.shift(seconds=15)
+        telemetry_grace_seconds = int(env.get("CONFORMANCE_TELEMETRY_GRACE_SECONDS", 15))
+        telemetry_grace_seconds = max(1, telemetry_grace_seconds)
+        # Check the current time is within the start / end date time +/- grace window
+        fifteen_seconds_before_now = now.shift(seconds=-telemetry_grace_seconds)
+        fifteen_seconds_after_now = now.shift(seconds=telemetry_grace_seconds)
         # C10 state check
         # allowed_states = ['Activated', 'Nonconforming', 'Contingent']
         allowed_states = [2, 3, 4]

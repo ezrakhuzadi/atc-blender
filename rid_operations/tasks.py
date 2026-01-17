@@ -559,8 +559,7 @@ def stream_rid_test_data(requested_flights, test_id):
                 icao_address=icao_address,
                 metadata=asdict(observation_metadata),
             )
-            # TODO: Write to database
-            write_incoming_air_traffic_data.delay(json.dumps(asdict(so)))  # Send a job to the task queue
+            write_incoming_air_traffic_data.delay(json.dumps(asdict(so)))  # Queue DB write
             logger.debug("Submitted flight observation..")
 
     r.expire(flight_injection_sorted_set, time=3000)

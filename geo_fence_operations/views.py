@@ -357,15 +357,15 @@ class GeoZoneSourcesOperations(generics.GenericAPIView):
         geoawareness_test_data_store = "geoawarenes_test." + str(geozone_source_id)
         r = get_redis()
         if r.exists(geoawareness_test_data_store):
-            # TODO: delete the test and dataset
             all_test_geozones = GeoFence.objects.filter(is_test_dataset=1)
-            for geozone in all_test_geozones.all():
-                geozone.delete()
+            deleted_count = all_test_geozones.count()
+            all_test_geozones.delete()
             deletion_status = GeoAwarenessTestStatus(
                 result=GeoAwarenessImportResponseEnum.Deactivating,
-                message="Test data has been scheduled to be deleted",
+                message=f"Deleted {deleted_count} test geozone(s)",
             )
             r.set(geoawareness_test_data_store, json.dumps(asdict(deletion_status)))
+            r.expire(name=geoawareness_test_data_store, time=3000)
             return JsonResponse(
                 json.loads(json.dumps(deletion_status, cls=EnhancedJSONEncoder)),
                 status=200,

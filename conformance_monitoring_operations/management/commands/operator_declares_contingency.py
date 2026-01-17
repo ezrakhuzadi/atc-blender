@@ -8,7 +8,7 @@ from shapely.geometry import Point
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from common.data_definitions import OPERATION_STATES
-from common.database_operations import FlightBlenderDatabaseReader
+from common.database_operations import FlightBlenderDatabaseReader, FlightBlenderDatabaseWriter
 from conformance_monitoring_operations.data_definitions import PolygonAltitude
 from flight_declaration_operations.utils import OperationalIntentsConverter
 from flight_feed_operations import flight_stream_helper
@@ -17,6 +17,7 @@ from scd_operations.dss_scd_helper import (
     OperationalIntentReferenceHelper,
     SCDOperations,
 )
+from scd_operations.scd_data_definitions import OperationalIntentUSSDetails, Volume4D
 
 load_dotenv(find_dotenv())
 
@@ -160,35 +161,66 @@ class Command(BaseCommand):
             )
             logger.debug(f"Nominal or off-nominal volumes: {nominal_or_off_nominal_volumes}")
 
-            if not dry_run:
-                flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://localhost:8000")
-                for subscriber in dss_response_subscribers:
-                    subscriptions = subscriber.subscriptions
-                    uss_base_url = subscriber.uss_base_url
-                    if flight_blender_base_url == uss_base_url:
-                        for s in subscriptions:
-                            subscription_id = s.subscription_id
-                            break
+        if isinstance(nominal_or_off_nominal_volumes, Volume4D):
+            nominal_or_off_nominal_volumes = [nominal_or_off_nominal_volumes]
 
-                operational_update_response = my_scd_dss_helper.update_specified_operational_intent_reference(
-                    subscription_id=subscription_id,
-                    operational_intent_ref_id=reference_full.id,
-                    extents=nominal_or_off_nominal_volumes,
-                    current_state=current_state_str,
-                    new_state=contingent_state_str,
-                    ovn=reference_full.ovn,
-                    deconfliction_check=True,
+        flight_declaration.state = contingent_state
+        flight_declaration.save()
+
+        subscription_id = reference_full.subscription_id
+        for subscriber in dss_response_subscribers:
+            subscriptions = subscriber.subscriptions
+            uss_base_url = subscriber.uss_base_url
+            if flight_blender_base_url == uss_base_url:
+                for s in subscriptions:
+                    subscription_id = s.subscription_id
+                    break
+
+        operational_update_response = my_scd_dss_helper.update_specified_operational_intent_reference(
+            subscription_id=subscription_id,
+            operational_intent_ref_id=reference_full.id,
+            extents=nominal_or_off_nominal_volumes,
+            current_state=current_state_str,
+            new_state=contingent_state_str,
+            ovn=reference_full.ovn,
+            deconfliction_check=True,
+        )
+
+        if operational_update_response.status == 200:
+            logger.info(
+                "Successfully updated operational intent status for {operational_intent_id} on the DSS".format(
+                    operational_intent_id=flight_declaration_id
+                )
+            )
+            my_database_writer = FlightBlenderDatabaseWriter()
+            flight_operational_intent_reference = my_database_reader.get_flight_operational_intent_reference_by_flight_declaration_id(
+                flight_declaration_id=flight_declaration_id
+            )
+            if flight_operational_intent_reference:
+                my_database_writer.update_flight_operational_intent_reference(
+                    flight_operational_intent_reference=flight_operational_intent_reference,
+                    update_operational_intent_reference=operational_update_response.dss_response.operational_intent_reference,
                 )
 
-                if operational_update_response.status == 200:
-                    logger.info(
-                        "Successfully updated operational intent status for {operational_intent_id} on the DSS".format(
-                            operational_intent_id=flight_declaration_id
-                        )
-                    )
-                    # TODO Notify subscribers
-                else:
-                    logger.info("Error in updating operational intent on the DSS")
+            flight_operational_intent_details = my_database_reader.get_operational_intent_details_by_flight_declaration_id(
+                declaration_id=flight_declaration_id
+            )
+            if flight_operational_intent_details:
+                updated_details = OperationalIntentUSSDetails(
+                    volumes=nominal_or_off_nominal_volumes,
+                    off_nominal_volumes=details_full.off_nominal_volumes or [],
+                    priority=details_full.priority,
+                )
+                my_database_writer.update_flight_operational_intent_details(
+                    flight_operational_intent_detail=flight_operational_intent_details,
+                    operational_intent_details=updated_details,
+                )
 
-            else:
-                logger.info("Dry run, not submitting to the DSS")
+            my_scd_dss_helper.process_peer_uss_notifications(
+                all_subscribers=operational_update_response.dss_response.subscribers,
+                operational_intent_details=details_full,
+                operational_intent_reference=operational_update_response.dss_response.operational_intent_reference,
+                operational_intent_id=str(reference_full.id),
+            )
+        else:
+            logger.info("Error in updating operational intent on the DSS")
