@@ -8,6 +8,7 @@ import math
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timedelta
+import os
 from os import environ as env
 
 import requests
@@ -67,10 +68,29 @@ if ENV_FILE:
 
 geod = Geod(ellps="WGS84")
 
+def normalize_base_url(value: str | None, fallback: str) -> str:
+    base = (value or "").strip() or fallback
+    return base.rstrip("/")
+
+
+def resolve_flightblender_base_url() -> str:
+    base = (env.get("FLIGHTBLENDER_FQDN") or "").strip()
+    if not base:
+        base = "http://flight-blender:8000"
+
+    if base.startswith("http://localhost") or base.startswith("http://127.0.0.1"):
+        if os.path.exists("/.dockerenv"):
+            base = "http://flight-blender:8000"
+
+    return base.rstrip("/")
+
 
 class RemoteIDOperations:
     def __init__(self):
-        self.dss_base_url = env.get("DSS_BASE_URL", "000")
+        self.dss_base_url = normalize_base_url(
+            env.get("DSS_BASE_URL"),
+            "http://local-dss-core:8082"
+        )
         self.r = get_redis()
 
     def compute_polygon_area(self, polygon: Polygon):
@@ -221,7 +241,7 @@ class RemoteIDOperations:
 
         # A token from authority was received,
 
-        dss_isa_create_url = self.dss_base_url + "rid/v2/dss/identification_service_areas/" + new_isa_id
+        dss_isa_create_url = f"{self.dss_base_url}/rid/v2/dss/identification_service_areas/{new_isa_id}"
 
         # check if a subscription already exists for this view_port
         headers = {
@@ -365,7 +385,7 @@ class RemoteIDOperations:
         else:
             # A token from authority was received,
             new_subscription_id = str(uuid.uuid4())
-            dss_subscription_url = self.dss_base_url + "rid/v2/dss/subscriptions/" + new_subscription_id
+            dss_subscription_url = f"{self.dss_base_url}/rid/v2/dss/subscriptions/{new_subscription_id}"
             # check if a subscription already exists for this view_port
 
             now = datetime.now()
@@ -373,7 +393,7 @@ class RemoteIDOperations:
 
             # callback_url += "/" + new_subscription_id
 
-            uss_base_url = env.get("FLIGHTBLENDER_FQDN", "https://www.https://www.flightblender.com") + "/rid"
+            uss_base_url = f\"{resolve_flightblender_base_url()}/rid\"
 
             subscription_seconds_timedelta = timedelta(seconds=subscription_duration_seconds)
             current_time = now.isoformat() + "Z"
@@ -465,7 +485,7 @@ class RemoteIDOperations:
             "content-type": RESPONSE_CONTENT_TYPE,
             "Authorization": "Bearer " + auth_token["access_token"],
         }
-        dss_subscription_url = self.dss_base_url + "rid/v2/dss/subscriptions/" + subscription_id
+        dss_subscription_url = f"{self.dss_base_url}/rid/v2/dss/subscriptions/{subscription_id}"
         try:
             dss_r = requests.delete(dss_subscription_url, headers=headers)
         except Exception as re:
