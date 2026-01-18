@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import asdict
 from enum import Enum
 from os import environ as env
@@ -33,9 +34,29 @@ if ENV_FILE:
 from loguru import logger
 
 
+def normalize_base_url(value: str | None, fallback: str) -> str:
+    base = (value or "").strip() or fallback
+    return base.rstrip("/")
+
+
+def resolve_flightblender_base_url() -> str:
+    base = (env.get("FLIGHTBLENDER_FQDN") or "").strip()
+    if not base:
+        base = "http://flight-blender:8000"
+
+    if base.startswith("http://localhost") or base.startswith("http://127.0.0.1"):
+        if os.path.exists("/.dockerenv"):
+            base = "http://flight-blender:8000"
+
+    return base.rstrip("/")
+
+
 class ConstraintOperations:
     def __init__(self):
-        self.dss_base_url = env.get("DSS_BASE_URL", "0")
+        self.dss_base_url = normalize_base_url(
+            env.get("DSS_BASE_URL"),
+            "http://local-dss-core:8082"
+        )
 
         self.database_reader = FlightBlenderDatabaseReader()
         self.database_writer = FlightBlenderDatabaseWriter()
@@ -45,13 +66,13 @@ class ConstraintOperations:
 
         auth_token = self.get_auth_token()
         # Query the DSS for operational intentns
-        query_constraints_url = self.dss_base_url + "dss/v1/constraint_references/query"
+        query_constraints_url = f"{self.dss_base_url}/dss/v1/constraint_references/query"
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + auth_token["access_token"],
         }
 
-        flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://flight-blender:8000")
+        flight_blender_base_url = resolve_flightblender_base_url()
 
         all_constraints_in_aoi: list[Constraint] = []
 

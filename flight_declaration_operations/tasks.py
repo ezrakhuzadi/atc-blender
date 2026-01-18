@@ -18,6 +18,7 @@ from flight_blender.celery import app
 from notification_operations.data_definitions import FlightDeclarationUpdateMessage
 from notification_operations.notification_helper import NotificationFactory
 from scd_operations.opint_helper import DSSOperationalIntentsCreator
+from scd_operations.dss_scd_helper import resolve_flightblender_base_url
 from scd_operations.scd_data_definitions import (
     NotifyPeerUSSPostPayload,
     OperationalIntentDetailsUSSResponse,
@@ -149,7 +150,7 @@ def submit_flight_declaration_to_dss_async(flight_declaration_id: str):
             for subscriber in subscribers:
                 subscriptions_raw = subscriber.subscriptions
                 uss_base_url = subscriber.uss_base_url
-                flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://localhost:8000")
+                flight_blender_base_url = resolve_flightblender_base_url()
 
                 if uss_base_url != flight_blender_base_url:  # There are others who are subscribesd, not just ourselves
                     op_int_details = from_dict(

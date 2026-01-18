@@ -452,7 +452,7 @@ def stream_rid_test_data(requested_flights, test_id):
         time_end=RIDTime(value=astm_rid_standard_end_time.isoformat(), format="RFC3339"),
     )
 
-    uss_base_url = env.get("FLIGHTBLENDER_FQDN", "http://flight-blender:8000")
+    uss_base_url = dss_rid_helper.resolve_flightblender_base_url()
     my_dss_helper = dss_rid_helper.RemoteIDOperations()
 
     logger.info("Creating a DSS ISA..")

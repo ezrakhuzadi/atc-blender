@@ -25,9 +25,17 @@ if ENV_FILE:
 from loguru import logger
 
 
+def normalize_base_url(value: str | None, fallback: str) -> str:
+    base = (value or "").strip() or fallback
+    return base.rstrip("/")
+
+
 class USSConstraintsOperations:
     def __init__(self):
-        self.dss_base_url = env.get("DSS_BASE_URL", "0")
+        self.dss_base_url = normalize_base_url(
+            env.get("DSS_BASE_URL"),
+            "http://local-dss-core:8082"
+        )
         self.r = get_redis()
         self.database_reader = FlightBlenderDatabaseReader()
         self.database_writer = FlightBlenderDatabaseWriter()
@@ -57,7 +65,7 @@ class USSConstraintsOperations:
     def query_constraint_references(self, volume: Volume4D) -> list[ConstraintReference] | list[Never]:
         auth_token = self.get_auth_token()
 
-        query_constraint_references_url = self.dss_base_url + "dss/v1/constraint_references/query"
+        query_constraint_references_url = f"{self.dss_base_url}/dss/v1/constraint_references/query"
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + auth_token["access_token"],

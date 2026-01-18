@@ -1,5 +1,6 @@
 import json
 import uuid
+import os
 from dataclasses import asdict
 from datetime import datetime
 from os import environ as env
@@ -80,6 +81,23 @@ if ENV_FILE:
     load_dotenv(ENV_FILE)
 
 from loguru import logger
+
+
+def normalize_base_url(value: str | None, fallback: str) -> str:
+    base = (value or "").strip() or fallback
+    return base.rstrip("/")
+
+
+def resolve_flightblender_base_url() -> str:
+    base = (env.get("FLIGHTBLENDER_FQDN") or "").strip()
+    if not base:
+        base = "http://flight-blender:8000"
+
+    if base.startswith("http://localhost") or base.startswith("http://127.0.0.1"):
+        if os.path.exists("/.dockerenv"):
+            base = "http://flight-blender:8000"
+
+    return base.rstrip("/")
 
 
 def is_time_within_time_period(start_time: datetime, end_time: datetime, time_to_check: datetime):
@@ -715,7 +733,10 @@ class OperationalIntentReferenceHelper:
 
 class SCDOperations:
     def __init__(self):
-        self.dss_base_url = env.get("DSS_BASE_URL", "0")
+        self.dss_base_url = normalize_base_url(
+            env.get("DSS_BASE_URL"),
+            "http://local-dss-core:8082"
+        )
         self.r = get_redis()
         self.database_reader = FlightBlenderDatabaseReader()
         self.database_writer = FlightBlenderDatabaseWriter()
@@ -728,13 +749,13 @@ class SCDOperations:
         nearby_operational_intents = []
         auth_token = self.get_auth_token()
         # Query the DSS for operational intentns
-        query_op_int_url = self.dss_base_url + "dss/v1/operational_intent_references/query"
+        query_op_int_url = f"{self.dss_base_url}/dss/v1/operational_intent_references/query"
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + auth_token["access_token"],
         }
 
-        flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://flight-blender:8000")
+        flight_blender_base_url = resolve_flightblender_base_url()
         my_op_int_ref_helper = OperationalIntentReferenceHelper()
         all_uss_operational_intent_details = []
 
@@ -761,7 +782,7 @@ class SCDOperations:
             # Query the operational intent reference details
             for operational_intent_reference_detail in operational_intent_references:
                 # Get the USS URL endpoint
-                dss_op_int_details_url = self.dss_base_url + "dss/v1/operational_intent_references/" + operational_intent_reference_detail["id"]
+                dss_op_int_details_url = f"{self.dss_base_url}/dss/v1/operational_intent_references/{operational_intent_reference_detail['id']}"
                 # get new auth token for USS
                 try:
                     op_int_uss_details = requests.get(dss_op_int_details_url, headers=headers)
@@ -984,7 +1005,7 @@ class SCDOperations:
 
         auth_token = self.get_auth_token()
 
-        dss_opint_delete_url = self.dss_base_url + "dss/v1/operational_intent_references/" + dss_operational_intent_ref_id + "/" + ovn
+        dss_opint_delete_url = f"{self.dss_base_url}/dss/v1/operational_intent_references/{dss_operational_intent_ref_id}/{ovn}"
 
         headers = {
             "Content-Type": "application/json",
@@ -1325,7 +1346,7 @@ class SCDOperations:
         """
         auth_token = self.get_auth_token()
         logger.info(f"Updating operational intent reference: {operational_intent_ref_id}")
-        flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://localhost:8000")
+        flight_blender_base_url = resolve_flightblender_base_url()
 
         # Initialize the update request with empty airspace key
         operational_intent_update_payload = OperationalIntentUpdateRequest(
@@ -1395,13 +1416,13 @@ class SCDOperations:
             )
             return opint_update_result
 
-        dss_opint_update_url = self.dss_base_url + "dss/v1/operational_intent_references/" + operational_intent_ref_id + "/" + updated_ovn
+        dss_opint_update_url = f"{self.dss_base_url}/dss/v1/operational_intent_references/{operational_intent_ref_id}/{updated_ovn}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + auth_token["access_token"],
         }
 
-        flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://flight-blender:8000")
+        flight_blender_base_url = resolve_flightblender_base_url()
         dss_r = requests.put(
             dss_opint_update_url,
             json=json.loads(json.dumps(asdict(operational_intent_update_payload), cls=LazyEncoder)),
@@ -1473,13 +1494,13 @@ class SCDOperations:
         logger.info("Creating new operational intent...")
         new_entity_id = str(uuid.uuid4())
         management_key = str(uuid.uuid4())
-        new_operational_intent_ref_creation_url = self.dss_base_url + "dss/v1/operational_intent_references/" + new_entity_id
+        new_operational_intent_ref_creation_url = f"{self.dss_base_url}/dss/v1/operational_intent_references/{new_entity_id}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + auth_token["access_token"],
         }
         airspace_keys = []
-        flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://flight-blender:8000")
+        flight_blender_base_url = resolve_flightblender_base_url()
         implicit_subscription_parameters = ImplicitSubscriptionParameters(uss_base_url=flight_blender_base_url, notify_for_constraints=True)
         operational_intent_reference = OperationalIntentReference(
             extents=volumes,

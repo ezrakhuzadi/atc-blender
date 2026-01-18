@@ -16,6 +16,7 @@ from scd_operations.data_definitions import FlightDeclarationOperationalIntentSt
 from scd_operations.dss_scd_helper import (
     OperationalIntentReferenceHelper,
     SCDOperations,
+    resolve_flightblender_base_url,
 )
 from scd_operations.scd_data_definitions import OperationalIntentUSSDetails, Volume4D
 
@@ -51,7 +52,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
-        flight_blender_base_url = env.get("FLIGHTBLENDER_FQDN", "http://localhost:8000")
+        flight_blender_base_url = resolve_flightblender_base_url()
 
         dry_run = 1 if dry_run == "1" else 0
         contingent_state = 4
