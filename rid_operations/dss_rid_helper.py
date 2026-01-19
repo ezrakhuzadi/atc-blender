@@ -84,6 +84,20 @@ def resolve_flightblender_base_url() -> str:
 
     return base.rstrip("/")
 
+def parse_fallback_uss_urls() -> list[str]:
+    raw = (env.get("RID_FALLBACK_USS_URLS") or "").strip()
+    if not raw:
+        return []
+    urls = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if not entry.startswith("http://") and not entry.startswith("https://"):
+            entry = f"http://{entry}"
+        urls.append(entry.rstrip("/"))
+    return urls
+
 
 class RemoteIDOperations:
     def __init__(self):
@@ -393,7 +407,7 @@ class RemoteIDOperations:
 
             # callback_url += "/" + new_subscription_id
 
-            uss_base_url = f\"{resolve_flightblender_base_url()}/rid\"
+            uss_base_url = f"{resolve_flightblender_base_url()}/rid"
 
             subscription_seconds_timedelta = timedelta(seconds=subscription_duration_seconds)
             current_time = now.isoformat() + "Z"
@@ -426,14 +440,32 @@ class RemoteIDOperations:
                 dss_r = requests.put(dss_subscription_url, json=payload, headers=headers)
             except Exception as re:
                 logger.error("Error in posting to subscription URL %s " % re)
-                return subscription_response
+                return self._fallback_subscription(
+                    request_uuid=request_uuid,
+                    view=view,
+                    time_start=time_start,
+                    time_end=time_end,
+                    end_datetime=fifteen_seconds_from_now_isoformat,
+                    uss_base_url=uss_base_url,
+                    is_simulated=is_simulated,
+                    reason="request_failed",
+                )
 
             try:
                 assert dss_r.status_code == 200
                 subscription_response.created = True
             except AssertionError:
                 logger.error("Error in creating subscription in the DSS %s" % dss_r.text)
-                return subscription_response
+                return self._fallback_subscription(
+                    request_uuid=request_uuid,
+                    view=view,
+                    time_start=time_start,
+                    time_end=time_end,
+                    end_datetime=fifteen_seconds_from_now_isoformat,
+                    uss_base_url=uss_base_url,
+                    is_simulated=is_simulated,
+                    reason="dss_rejected",
+                )
             else:
                 dss_response = dss_r.json()
 
@@ -469,6 +501,68 @@ class RemoteIDOperations:
                 )
 
                 return subscription_response
+
+    def _fallback_subscription(
+        self,
+        request_uuid: str,
+        view: str,
+        time_start: RIDTime,
+        time_end: RIDTime,
+        end_datetime: str,
+        uss_base_url: str,
+        is_simulated: bool,
+        reason: str,
+    ) -> SubscriptionResponse:
+        fallback_urls = parse_fallback_uss_urls()
+        if not fallback_urls:
+            logger.warning("RID DSS subscription failed (%s); no fallback USS URLs configured", reason)
+            return SubscriptionResponse(created=False, dss_subscription_id=None, notification_index=0)
+
+        subscription_id = str(uuid.uuid4())
+        view_hash = int(hashlib.sha256(view.encode("utf-8")).hexdigest(), 16) % 10**8
+        subscription = RIDSubscription(
+            id=subscription_id,
+            uss_base_url=uss_base_url,
+            owner="fallback",
+            notification_index=0,
+            time_start=time_start,
+            time_end=time_end,
+            version="1",
+        )
+        service_areas = [
+            IdentificationServiceArea(
+                id=str(uuid.uuid4()),
+                uss_base_url=url,
+                owner="fallback",
+                time_start=time_start,
+                time_end=time_end,
+                version="1",
+            )
+            for url in fallback_urls
+        ]
+        flights_dict = RIDFlightsRecord(service_areas=service_areas, subscription=subscription)
+
+        my_database_writer = FlightBlenderDatabaseWriter()
+        my_database_writer.create_rid_subscription_record(
+            subscription_id=subscription_id,
+            record_id=request_uuid,
+            view_hash=view_hash,
+            end_datetime=end_datetime,
+            is_simulated=True,
+            view=view,
+            flights_dict=json.dumps(
+                asdict(
+                    flights_dict,
+                    dict_factory=lambda x: {k: v for (k, v) in x if (v is not None)},
+                )
+            ),
+        )
+        logger.warning(
+            "RID DSS subscription failed (%s); using fallback USS URLs: %s",
+            reason,
+            ", ".join(fallback_urls),
+        )
+        return SubscriptionResponse(created=True, dss_subscription_id=subscription_id, notification_index=0)
 
     def delete_dss_subscription(self, subscription_id: str):
         """This module calls the DSS to delete a subscription"""
@@ -580,11 +674,22 @@ class RemoteIDOperations:
             logger.debug(f"Flight url list : {all_flights_url}")
             audience = generate_audience_from_base_url(base_url=_service_area.uss_base_url)
 
-            auth_credentials = authority_credentials.get_cached_credentials(audience=audience, token_type="rid")
             headers = {
                 "content-type": RESPONSE_CONTENT_TYPE,
-                "Authorization": "Bearer " + auth_credentials["access_token"],
             }
+            try:
+                auth_credentials = authority_credentials.get_cached_credentials(audience=audience, token_type="rid")
+            except Exception as exc:
+                logger.warning("RID auth token fetch failed for %s: %s", audience, exc)
+                auth_credentials = {}
+
+            access_token = None
+            if isinstance(auth_credentials, dict):
+                access_token = auth_credentials.get("access_token")
+            if access_token:
+                headers["Authorization"] = "Bearer " + access_token
+            else:
+                logger.warning("RID auth token missing for %s; requesting without auth", audience)
             flights_request = requests.get(rid_query_url, headers=headers)
 
             if flights_request.status_code == 200:
@@ -647,7 +752,7 @@ class RemoteIDOperations:
 
             else:
                 logs_dict = {
-                    "url": cur_flight_url,
+                    "url": rid_query_url,
                     "status_code": flights_request.status_code,
                 }
                 logger.info("Received a non 200 error from {url} : {status_code} ".format(**logs_dict))
