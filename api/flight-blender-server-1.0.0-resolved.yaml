@@ -871,6 +871,130 @@ paths:
           description: >-
             The client issued too many requests in a short period of time.
 
+  /uss/v1/operational_intents/{entityid}/telemetry:
+    summary: Retrieve telemetry for an operational intent (Nonconforming/Contingent).
+    parameters:
+      - name: entityid
+        description: EntityID for this operational intent.
+        schema:
+          $ref: '#/components/schemas/EntityID'
+        in: path
+        required: true
+    get:
+      tags:
+        - uss
+      security:
+        - AuthFromAuthorizationAuthority:
+            - utm.conformance_monitoring_sa
+      summary: Retrieve the specified operational intent telemetry
+      description: >-
+        Get telemetry for an existing operational intent in Flight Blender.
+      operationId: getOperationalIntentTelemetry
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/USSVehicleTelemetryResponse'
+          description: Operational intent telemetry was retrieved successfully.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: One or more input parameters were missing or invalid.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: >-
+            Bearer access token was not provided in Authorization header, token
+            could not be decoded, or token was invalid.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: >-
+            The access token was decoded successfully but did not include a
+            scope appropriate to this endpoint.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The requested Entity could not be found.
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: >-
+            The client issued too many requests in a short period of time.
+
+  /uss/v1/operational_intents/{entityid}/off_nominal_position:
+    summary: Retrieve last known telemetry for an operational intent.
+    parameters:
+      - name: entityid
+        description: EntityID for this operational intent.
+        schema:
+          $ref: '#/components/schemas/EntityID'
+        in: path
+        required: true
+    get:
+      tags:
+        - uss
+      security:
+        - AuthFromAuthorizationAuthority:
+            - utm.strategic_coordination
+      summary: Retrieve the specified operational intent off-nominal position
+      description: >-
+        Retrieve the last known telemetry position for an existing operational intent in Flight Blender.
+      operationId: getOperationalIntentOffNominalPosition
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/USSVehicleTelemetryResponse'
+          description: Operational intent telemetry was retrieved successfully.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: One or more input parameters were missing or invalid.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: >-
+            Bearer access token was not provided in Authorization header, token
+            could not be decoded, or token was invalid.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: >-
+            The access token was decoded successfully but did not include a
+            scope appropriate to this endpoint.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: The requested Entity could not be found.
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: >-
+            The client issued too many requests in a short period of time.
+
   /v1/uss/flights:
     summary: Basic operation details to meet remote ID requirements.
 
@@ -4838,6 +4962,72 @@ components:
           type: string
           enum:
             - RFC3339
+
+    USSVehicleTelemetryResponse:
+      description: Telemetry response for USS-to-USS operational intent queries.
+      required:
+        - operational_intent_id
+        - next_telemetry_opportunity
+      type: object
+      properties:
+        operational_intent_id:
+          $ref: '#/components/schemas/EntityID'
+        telemetry:
+          $ref: '#/components/schemas/USSVehicleTelemetry'
+          nullable: true
+        next_telemetry_opportunity:
+          $ref: '#/components/schemas/Time'
+
+    USSVehicleTelemetry:
+      description: Vehicle telemetry snapshot.
+      required:
+        - time_measured
+      type: object
+      properties:
+        time_measured:
+          $ref: '#/components/schemas/Time'
+        position:
+          $ref: '#/components/schemas/USSPosition'
+          nullable: true
+        velocity:
+          $ref: '#/components/schemas/USSVelocity'
+          nullable: true
+
+    USSPosition:
+      description: Vehicle position as reported for UTM conformance/strategic coordination.
+      type: object
+      properties:
+        longitude:
+          $ref: '#/components/schemas/Longitude'
+        latitude:
+          $ref: '#/components/schemas/Latitude'
+        accuracy_h:
+          type: string
+          nullable: true
+        accuracy_v:
+          type: string
+          nullable: true
+        altitude:
+          $ref: '#/components/schemas/Altitude'
+          nullable: true
+        extrapolated:
+          type: boolean
+          nullable: true
+
+    USSVelocity:
+      description: Vehicle velocity vector.
+      type: object
+      properties:
+        speed:
+          type: number
+          format: float
+        units_speed:
+          type: string
+          enum:
+            - MetersPerSecond
+        track:
+          type: number
+          format: float
 
     OperationalIntentTestInjection:
       description: >-

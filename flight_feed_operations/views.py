@@ -15,6 +15,7 @@ from loguru import logger
 from marshmallow import ValidationError
 from rest_framework import generics
 from rest_framework.decorators import api_view
+from urllib.parse import urlencode
 
 from auth_helper.utils import requires_scopes
 from common.data_definitions import FLIGHTBLENDER_READ_SCOPE, FLIGHTBLENDER_WRITE_SCOPE
@@ -452,11 +453,26 @@ def traffic_information_discovery_view(request):
             content_type="application/json",
         )
 
-    traffic_information_url = env.get("TRAFFIC_INFORMATION_URL", "https://not_implemented_yet")
+    traffic_information_url = env.get("TRAFFIC_INFORMATION_URL", "").strip()
+    if traffic_information_url and traffic_information_url != "https://not_implemented_yet":
+        resolved_url = traffic_information_url
+    else:
+        session_id = uuid.uuid4()
+        autostart = env.get("TRAFFIC_INFORMATION_AUTOSTART_OPENSKY", "true").lower() in ("1", "true", "yes")
+        if autostart:
+            start_opensky_network_stream.delay(view_port=json.dumps(view_port), session_id=str(session_id))
+        params = {"view": ",".join(str(value) for value in view_port)}
+        if data_format:
+            params["format"] = data_format
+        query = urlencode(params)
+        resolved_url = request.build_absolute_uri(f"/flight_stream/get_air_traffic/{session_id}")
+        if query:
+            resolved_url = f"{resolved_url}?{query}"
+
     response_data = TrafficInformationDiscoveryResponse(
-        message="Traffic Information Discovery information successfully retrieved",
-        url=traffic_information_url,
-        description="Start a QUIC query to the traffic information url service to get traffic information in the specified view port",
+        message="Traffic information discovery information successfully retrieved",
+        url=resolved_url,
+        description="Poll the URL for JSON air-traffic observations within the requested view port.",
     )
 
     return JsonResponse(asdict(response_data), status=200, content_type="application/json")

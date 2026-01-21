@@ -36,16 +36,22 @@ class GeoZoneParser:
             ed_269_geometries = []
 
             all_ed_269_geometries = _geo_zone_feature["geometry"]
+            feature_valid = True
 
             for ed_269_geometry in all_ed_269_geometries:
                 parse_error = False
-                if ed_269_geometry["horizontalProjection"]["type"] == "Polygon":
-                    pass
-                elif ed_269_geometry["horizontalProjection"]["type"] == "Circle":
+                horizontal_projection = ed_269_geometry.get("horizontalProjection", {})
+                projection_type = horizontal_projection.get("type")
+
+                if projection_type == "Polygon":
+                    if not horizontal_projection.get("coordinates"):
+                        logger.info("Polygon horizontalProjection missing coordinates")
+                        parse_error = True
+                elif projection_type == "Circle":
                     try:
-                        lat = ed_269_geometry["horizontalProjection"]["center"][1]
-                        lng = ed_269_geometry["horizontalProjection"]["center"][0]
-                        radius = ed_269_geometry["horizontalProjection"]["radius"]
+                        lat = horizontal_projection["center"][1]
+                        lng = horizontal_projection["center"][0]
+                        radius = horizontal_projection["radius"]
                     except KeyError as ke:
                         logger.info("Error in parsing points provided in the ED 269 file %s" % ke)
 
@@ -61,18 +67,32 @@ class GeoZoneParser:
                         logger.info("Converting point to circle")
                         logger.debug(f"{json.dumps(fc)}")
                         ed_269_geometry["horizontalProjection"] = b
+                else:
+                    logger.info(f"Unsupported horizontalProjection type: {projection_type}")
+                    parse_error = True
+
                 if not parse_error:
-                    horizontal_projection = ImplicitDict.parse(ed_269_geometry["horizontalProjection"], HorizontalProjection)
-                    parse_error = False
-                    ed_269_geometry = ED269Geometry(
-                        uomDimensions=ed_269_geometry["uomDimensions"],
-                        lowerLimit=ed_269_geometry["lowerLimit"],
-                        lowerVerticalReference=ed_269_geometry["lowerVerticalReference"],
-                        upperLimit=ed_269_geometry["upperLimit"],
-                        upperVerticalReference=ed_269_geometry["upperVerticalReference"],
-                        horizontalProjection=horizontal_projection,
-                    )
-                    ed_269_geometries.append(ed_269_geometry)
+                    try:
+                        horizontal_projection = ImplicitDict.parse(
+                            ed_269_geometry["horizontalProjection"],
+                            HorizontalProjection,
+                        )
+                        parsed_geometry = ED269Geometry(
+                            uomDimensions=ed_269_geometry["uomDimensions"],
+                            lowerLimit=ed_269_geometry["lowerLimit"],
+                            lowerVerticalReference=ed_269_geometry["lowerVerticalReference"],
+                            upperLimit=ed_269_geometry["upperLimit"],
+                            upperVerticalReference=ed_269_geometry["upperVerticalReference"],
+                            horizontalProjection=horizontal_projection,
+                        )
+                    except (KeyError, TypeError, ValueError) as exc:
+                        logger.info(f"Error parsing ED-269 geometry: {exc}")
+                        parse_error = True
+                    else:
+                        ed_269_geometries.append(parsed_geometry)
+
+                if parse_error:
+                    feature_valid = False
 
             geo_zone_feature = GeoZoneFeature(
                 identifier=_geo_zone_feature["identifier"],
@@ -92,7 +112,7 @@ class GeoZoneParser:
                 geometry=ed_269_geometries,
             )
             processed_geo_zone_features.append(geo_zone_feature)
-            all_zones_valid.append(True)
+            all_zones_valid.append(feature_valid and bool(ed_269_geometries))
 
         return ParseValidateResponse(all_zones=all_zones_valid, feature_list=processed_geo_zone_features)
 
@@ -108,9 +128,7 @@ def geodesic_point_buffer(lat, lon, km):
 def validate_geo_zone(geo_zone) -> bool:
     """A class to validate GeoZones"""
 
-    if all(k in geo_zone for k in ("title", "description", "features")):
-        pass
-    else:
+    if not all(k in geo_zone for k in ("title", "description", "features")):
         return False
 
     my_geo_zone_parser = GeoZoneParser(geo_zone=geo_zone)

@@ -80,6 +80,8 @@ ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
 
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
+
 from loguru import logger
 
 
@@ -770,6 +772,7 @@ class SCDOperations:
                     query_op_int_url,
                     json=json.loads(json.dumps(asdict(area_of_interest))),
                     headers=headers,
+                    timeout=REQUEST_TIMEOUT_S,
                 )
             except Exception as re:
                 logger.error("Error in getting operational intent for the volume %s " % re)
@@ -785,7 +788,7 @@ class SCDOperations:
                 dss_op_int_details_url = f"{self.dss_base_url}/dss/v1/operational_intent_references/{operational_intent_reference_detail['id']}"
                 # get new auth token for USS
                 try:
-                    op_int_uss_details = requests.get(dss_op_int_details_url, headers=headers)
+                    op_int_uss_details = requests.get(dss_op_int_details_url, headers=headers, timeout=REQUEST_TIMEOUT_S)
                 except Exception as e:
                     logger.error("Error in getting operational intent details %s" % e)
                 else:
@@ -884,7 +887,11 @@ class SCDOperations:
 
                     logger.debug(f"Querying USS: {current_uss_base_url}")
                     try:
-                        uss_operational_intent_request = requests.get(uss_operational_intent_url, headers=uss_headers)
+                        uss_operational_intent_request = requests.get(
+                            uss_operational_intent_url,
+                            headers=uss_headers,
+                            timeout=REQUEST_TIMEOUT_S,
+                        )
                     except urllib3.exceptions.NameResolutionError:
                         logger.info("URLLIB error")
                         raise ConnectionError("Could not reach peer USS.. ")
@@ -1018,6 +1025,7 @@ class SCDOperations:
             dss_opint_delete_url,
             json=json.loads(json.dumps(asdict(delete_payload))),
             headers=headers,
+            timeout=REQUEST_TIMEOUT_S,
         )
 
         dss_response = dss_r.json()
@@ -1165,6 +1173,7 @@ class SCDOperations:
             notification_url,
             json=json.loads(json.dumps(asdict(notification_payload))),
             headers=headers,
+            timeout=REQUEST_TIMEOUT_S,
         )
 
         uss_r_status_code = uss_r.status_code
@@ -1427,6 +1436,7 @@ class SCDOperations:
             dss_opint_update_url,
             json=json.loads(json.dumps(asdict(operational_intent_update_payload), cls=LazyEncoder)),
             headers=headers,
+            timeout=REQUEST_TIMEOUT_S,
         )
         dss_response = dss_r.json()
         dss_request_status_code = dss_r.status_code
@@ -1657,6 +1667,7 @@ class SCDOperations:
                 new_operational_intent_ref_creation_url,
                 json=opint_creation_payload,
                 headers=headers,
+                timeout=REQUEST_TIMEOUT_S,
             )
         except Exception as re:
             logger.error("Error in putting operational intent in the DSS %s " % re)

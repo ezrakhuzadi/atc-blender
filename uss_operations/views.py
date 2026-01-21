@@ -20,6 +20,7 @@ from common.database_operations import (
     FlightBlenderDatabaseReader,
     FlightBlenderDatabaseWriter,
 )
+from common.geo_types import Altitude
 from common.utils import EnhancedJSONEncoder
 from constraint_operations.data_definitions import PutConstraintDetailsParameters
 from flight_feed_operations import flight_stream_helper
@@ -53,6 +54,7 @@ from .uss_data_definitions import (
     OperationalIntentReferenceDSSResponse,
     OperationalIntentUSSDetails,
     OperatorDetailsSuccessResponse,
+    Position,
     Time,
     UpdateChangedOpIntDetailsPost,
     UpdateOperationalIntent,
@@ -140,22 +142,109 @@ def uss_update_opint_details(request):
 @api_view(["GET"])
 @requires_scopes(["utm.strategic_coordination"])
 def USSOffNominalPositionDetails(request, entity_id):
-    raise NotImplementedError
+    my_database_reader = FlightBlenderDatabaseReader()
+    flight_declaration = my_database_reader.get_flight_declaration_by_id(str(entity_id))
+    if not flight_declaration:
+        op_int_reference = my_database_reader.get_flight_operational_intent_reference_by_id(str(entity_id))
+        if op_int_reference:
+            flight_declaration = op_int_reference.declaration
+
+    if not flight_declaration:
+        not_found_response = OperationalIntentNotFoundResponse(
+            message="Requested Operational intent with id %s not found" % str(entity_id)
+        )
+        return JsonResponse(
+            json.loads(json.dumps(not_found_response, cls=EnhancedJSONEncoder)),
+            status=404,
+        )
+
+    observation_reader = flight_stream_helper.ObservationReadOperations()
+    latest_observation = observation_reader.get_latest_flight_observation_by_flight_declaration_id(
+        str(flight_declaration.id)
+    )
+
+    now = arrow.now()
+    five_seconds_from_now = now.shift(seconds=5)
+    telemetry = None
+    if latest_observation:
+        altitude = Altitude(
+            value=latest_observation.altitude_mm / 1000.0,
+            reference="W84",
+            units="M",
+        )
+        position = Position(
+            longitude=latest_observation.longitude_dd,
+            latitude=latest_observation.latitude_dd,
+            accuracy_h=None,
+            accuracy_v=None,
+            altitude=altitude,
+            extrapolated=False,
+        )
+        telemetry = VehicleTelemetry(
+            time_measured=Time(format="RFC3339", value=latest_observation.updated_at),
+            position=position,
+            velocity=None,
+        )
+
+    telemetry_response = VehicleTelemetryResponse(
+        operational_intent_id=str(entity_id),
+        telemetry=telemetry,
+        next_telemetry_opportunity=Time(format="RFC3339", value=five_seconds_from_now.isoformat()),
+    )
+    return JsonResponse(
+        json.loads(json.dumps(asdict(telemetry_response), cls=EnhancedJSONEncoder)),
+        status=200,
+    )
 
 
 @api_view(["GET"])
 @requires_scopes(["utm.conformance_monitoring_sa"])
 def USSOpIntDetailTelemetry(request, opint_id):
-    # Get the telemetry of a off-nominal USSP, for more information see https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/astm-utm/Protocol/cb7cf962d3a0c01b5ab12502f5f54789624977bf/utm.yaml
+    my_database_reader = FlightBlenderDatabaseReader()
+    flight_declaration = my_database_reader.get_flight_declaration_by_id(str(opint_id))
+    if not flight_declaration:
+        op_int_reference = my_database_reader.get_flight_operational_intent_reference_by_id(str(opint_id))
+        if op_int_reference:
+            flight_declaration = op_int_reference.declaration
+
+    if not flight_declaration:
+        not_found_response = OperationalIntentNotFoundResponse(
+            message="Requested Operational intent with id %s not found" % str(opint_id)
+        )
+        return JsonResponse(
+            json.loads(json.dumps(not_found_response, cls=EnhancedJSONEncoder)),
+            status=404,
+        )
+
+    observation_reader = flight_stream_helper.ObservationReadOperations()
+    latest_observation = observation_reader.get_latest_flight_observation_by_flight_declaration_id(str(flight_declaration.id))
+
     now = arrow.now()
     five_seconds_from_now = now.shift(seconds=5)
+    telemetry = None
+    if latest_observation:
+        altitude = Altitude(
+            value=latest_observation.altitude_mm / 1000.0,
+            reference="W84",
+            units="M",
+        )
+        position = Position(
+            longitude=latest_observation.longitude_dd,
+            latitude=latest_observation.latitude_dd,
+            accuracy_h=None,
+            accuracy_v=None,
+            altitude=altitude,
+            extrapolated=False,
+        )
+        telemetry = VehicleTelemetry(
+            time_measured=Time(format="RFC3339", value=latest_observation.updated_at),
+            position=position,
+            velocity=None,
+        )
+
     telemetry_response = VehicleTelemetryResponse(
         operational_intent_id=str(opint_id),
-        telemetry=VehicleTelemetry(
-            time_measured=Time(format="RFC3339", value=arrow.now().isoformat()),
-            position=None,
-            velocity=None,
-        ),
+        telemetry=telemetry,
         next_telemetry_opportunity=Time(format="RFC3339", value=five_seconds_from_now.isoformat()),
     )
     return JsonResponse(

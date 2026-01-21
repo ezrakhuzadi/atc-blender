@@ -5,6 +5,12 @@ from typing import Literal, NamedTuple
 from implicitdict import ImplicitDict, StringBasedDateTime
 from shapely.geometry import Point
 
+from common.geo_types import (
+    Altitude as RIDAltitude,
+    LatLngPoint as RIDLatLngPoint,
+    Polygon as RIDPolygon,
+    SubscriptionState,
+)
 from scd_operations.scd_data_definitions import Volume4D
 
 from .data_definitions import UASID, OperatorLocation, UAClassificationEU
@@ -14,12 +20,6 @@ from .data_definitions import UASID, OperatorLocation, UAClassificationEU
 class RIDTime:
     value: str
     format: str
-
-
-@dataclass
-class RIDLatLngPoint:
-    lat: float
-    lng: float
 
 
 class Position(NamedTuple):
@@ -79,20 +79,6 @@ class SubscriptionResponse:
 
 
 @dataclass
-class RIDAltitude:
-    """A class to hold altitude"""
-
-    value: int | float
-    reference: str
-    units: str
-
-
-@dataclass
-class RIDPolygon:
-    vertices: list[RIDLatLngPoint]
-
-
-@dataclass
 class RIDVolume3D:
     outline_polygon: RIDPolygon
     altitude_upper: RIDAltitude
@@ -104,12 +90,6 @@ class RIDVolume4D:
     volume: RIDVolume3D
     time_start: RIDTime
     time_end: RIDTime
-
-
-@dataclass
-class SubscriptionState:
-    subscription_id: str
-    notification_index: int = 0
 
 
 @dataclass

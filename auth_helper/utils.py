@@ -12,6 +12,7 @@ from loguru import logger
 
 load_dotenv(find_dotenv())
 
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
 
 def jwt_get_username_from_payload_handler(payload):
     username = payload.get("sub").replace("|", ".")
@@ -47,6 +48,7 @@ def requires_scopes(required_scopes, allow_any: bool = False):
         def decorated(*args, **kwargs):
             API_IDENTIFIER = env.get("PASSPORT_AUDIENCE", "testflight.flightblender.com")
             BYPASS_AUTH_TOKEN_VERIFICATION = int(env.get("BYPASS_AUTH_TOKEN_VERIFICATION", 0))
+            IS_DEBUG = int(env.get("IS_DEBUG", 0))
             PASSPORT_URL = env.get("PASSPORT_URL", "http://local.test:9000")
             DSS_AUTH_JWKS_ENDPOINT = env.get("DSS_AUTH_JWKS_ENDPOINT", "http://local.test:9000/.well-known/jwks.json")
             # remove the trailing slash if present
@@ -68,11 +70,14 @@ def requires_scopes(required_scopes, allow_any: bool = False):
             except jwt.DecodeError:
                 return JsonResponse({"detail": "Bearer token could not be decoded properly"}, status=401)
 
-            if BYPASS_AUTH_TOKEN_VERIFICATION:
+            bypass_enabled = BYPASS_AUTH_TOKEN_VERIFICATION and IS_DEBUG
+            if BYPASS_AUTH_TOKEN_VERIFICATION and not IS_DEBUG:
+                logger.warning("BYPASS_AUTH_TOKEN_VERIFICATION is set but IS_DEBUG is false; ignoring bypass.")
+            if bypass_enabled:
                 return handle_bypass_verification(token, required_scopes, f, *args, **kwargs)
 
             try:
-                passport_jwks_data_response = s.get(PASSPORT_JWKS_URL)
+                passport_jwks_data_response = s.get(PASSPORT_JWKS_URL, timeout=REQUEST_TIMEOUT_S)
                 passport_jwks_data = passport_jwks_data_response.json()
 
             except requests.exceptions.RequestException as e:
@@ -83,7 +88,7 @@ def requires_scopes(required_scopes, allow_any: bool = False):
                     status=400,
                 )
             try:
-                dss_jwks_data = s.get(DSS_AUTH_JWKS_ENDPOINT).json()
+                dss_jwks_data = s.get(DSS_AUTH_JWKS_ENDPOINT, timeout=REQUEST_TIMEOUT_S).json()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching DSS JWKS: {e}")
                 dss_jwks_data = {}

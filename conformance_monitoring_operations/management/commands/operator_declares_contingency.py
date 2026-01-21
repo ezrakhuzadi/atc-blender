@@ -1,15 +1,13 @@
 import json
-from os import environ as env
 
 from dacite import from_dict
 from django.core.management.base import BaseCommand, CommandError
 from dotenv import find_dotenv, load_dotenv
 from shapely.geometry import Point
-from shapely.geometry import Polygon as ShapelyPolygon
 
 from common.data_definitions import OPERATION_STATES
 from common.database_operations import FlightBlenderDatabaseReader, FlightBlenderDatabaseWriter
-from conformance_monitoring_operations.data_definitions import PolygonAltitude
+from conformance_monitoring_operations.utils import build_polygon_altitudes_from_volumes
 from flight_declaration_operations.utils import OperationalIntentsConverter
 from flight_feed_operations import flight_stream_helper
 from scd_operations.data_definitions import FlightDeclarationOperationalIntentStorageDetails
@@ -108,7 +106,7 @@ class Command(BaseCommand):
         lon_dd = relevant_observation.longitude_dd
         rid_location = Point(lon_dd, lat_dd)
         # check if it is within declared bounds
-        # TODO: This code is same as the C7check in the conformance / utils file. Need to refactor
+        # Reuse shared conformance volume parsing helper.
 
         operational_intent = json.loads(flight_declaration.operational_intent)
         operational_intent_data = from_dict(
@@ -117,33 +115,8 @@ class Command(BaseCommand):
         )
         declared_volumes = operational_intent_data.volumes
 
-        all_polygon_altitudes: list[PolygonAltitude] = []
-
-        rid_obs_within_all_volumes = []
-        all_altitudes = []
-        for v in declared_volumes:
-            altitude_lower = v.volume.altitude_lower.value
-            altitude_upper = v.volume.altitude_upper.value
-            all_altitudes.append(altitude_lower)
-            all_altitudes.append(altitude_upper)
-            outline_polygon = v.volume.outline_polygon
-            point_list = []
-            for vertex in outline_polygon.vertices:
-                p = Point(vertex.lng, vertex.lat)
-                point_list.append(p)
-            _shapely_outline_polygon = ShapelyPolygon([[p.x, p.y] for p in point_list])
-            pa = PolygonAltitude(
-                polygon=_shapely_outline_polygon,
-                altitude_upper=altitude_upper,
-                altitude_lower=altitude_lower,
-            )
-            all_polygon_altitudes.append(pa)
-
-        for p in all_polygon_altitudes:
-            is_within = rid_location.within(p.polygon)
-            rid_obs_within_all_volumes.append(is_within)
-
-        aircraft_bounds_conformant = any(rid_obs_within_all_volumes)
+        all_polygon_altitudes, all_altitudes = build_polygon_altitudes_from_volumes(declared_volumes)
+        aircraft_bounds_conformant = any(rid_location.within(p.polygon) for p in all_polygon_altitudes)
         if aircraft_bounds_conformant:  # Operator declares contingency, but the aircraft is within bounds, no need to update / change bounds
             nominal_or_off_nominal_volumes = stored_volumes
 

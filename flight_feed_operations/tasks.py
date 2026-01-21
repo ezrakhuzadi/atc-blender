@@ -23,6 +23,8 @@ ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
 
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
+
 
 from loguru import logger
 
@@ -109,6 +111,7 @@ def start_opensky_network_stream(view_port: str, session_id: str):
         response = requests.get(
             url_data,
             auth=(env.get("OPENSKY_NETWORK_USERNAME", "opensky"), env.get("OPENSKY_NETWORK_PASSWORD", "opensky")),
+            timeout=REQUEST_TIMEOUT_S,
         )
         logger.info(url_data)
         if response.status_code == 200:

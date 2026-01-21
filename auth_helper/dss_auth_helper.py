@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timedelta
 from os import environ as env
+from urllib.parse import urlparse
 
 import requests
 from dotenv import find_dotenv, load_dotenv
@@ -11,6 +12,8 @@ from .common import get_redis
 ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
+
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
 
 
 class AuthorityCredentialsGetter:
@@ -95,7 +98,16 @@ class AuthorityCredentialsGetter:
 
         auth_server_url = env.get("DSS_AUTH_URL", "http://host.docker.internal:8085") + env.get("DSS_AUTH_TOKEN_ENDPOINT", "/auth/token")
 
-        if auth_server_url.startswith("http://local_"):
+        def try_parse_json(response: requests.Response) -> dict:
+            try:
+                return response.json()
+            except ValueError as exc:
+                logger.error(f"Failed to parse token response JSON: {exc}; status={response.status_code}; body={response.text[:200]}")
+                raise
+
+        # InterUSS dummy-oauth (commonly used for local DSS) exposes a GET /token endpoint.
+        # Attempt POST first (OAuth2-style), but fall back to GET when the endpoint doesn't exist.
+        if auth_server_url.startswith(("http://local_", "http://local-", "https://local_", "https://local-")):
             payload = {
                 "grant_type": "client_credentials",
                 "intended_audience": env.get("DSS_SELF_AUDIENCE"),
@@ -103,12 +115,12 @@ class AuthorityCredentialsGetter:
                 "issuer": issuer,
             }
 
-            token_data = requests.get(auth_server_url, params=payload)
+            token_data = requests.get(auth_server_url, params=payload, timeout=REQUEST_TIMEOUT_S)
             if token_data.status_code != 200:
                 logger.error(f"Failed to get token for audience {audience} with scopes {scopes_str} and URL {auth_server_url}")
                 logger.error(f"Payload: {payload}")
                 logger.error(f"Failed to get token: {token_data.status_code} - {token_data.text}")
-            return token_data.json()
+            return try_parse_json(token_data)
         else:
             payload = {
                 "grant_type": "client_credentials",
@@ -119,9 +131,28 @@ class AuthorityCredentialsGetter:
             }
 
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            token_data = requests.post(auth_server_url, data=payload, headers=headers)
-            if token_data.status_code != 200:
+            token_data = requests.post(auth_server_url, data=payload, headers=headers, timeout=REQUEST_TIMEOUT_S)
+            if token_data.status_code == 200:
+                try:
+                    return try_parse_json(token_data)
+                except ValueError:
+                    pass
+
+            # If the configured endpoint doesn't support POST, fall back to GET /token.
+            parsed = urlparse(auth_server_url)
+            get_url = parsed._replace(path="/token").geturl()
+            get_payload = {
+                "grant_type": "client_credentials",
+                "intended_audience": env.get("DSS_SELF_AUDIENCE"),
+                "scope": scopes_str,
+                "issuer": issuer,
+            }
+            token_data_get = requests.get(get_url, params=get_payload, timeout=REQUEST_TIMEOUT_S)
+            if token_data_get.status_code != 200:
                 logger.error(f"Failed to get token for audience {audience} with scopes {scopes_str} and URL {auth_server_url}")
-                logger.error(f"Payload: {payload}")
-                logger.error(f"Failed to get token: {token_data.status_code} - {token_data.text}")
-            return token_data.json()
+                logger.error(f"POST payload: {payload}")
+                logger.error(f"POST response: {token_data.status_code} - {token_data.text}")
+                logger.error(f"GET fallback url: {get_url}")
+                logger.error(f"GET payload: {get_payload}")
+                logger.error(f"GET response: {token_data_get.status_code} - {token_data_get.text}")
+            return try_parse_json(token_data_get)

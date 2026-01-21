@@ -1,3 +1,5 @@
+from os import environ as env
+
 import requests
 from rest_framework import status
 
@@ -8,6 +10,8 @@ WEATHER_TOPICS = [
     "winddirection_10m",
     "windgusts_10m",
 ]
+
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
 
 
 class WeatherService:
@@ -26,7 +30,7 @@ class WeatherService:
             "hourly": ",".join(WEATHER_TOPICS),
         }
 
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_S)
 
         if response.status_code == status.HTTP_200_OK:
             return response.json()

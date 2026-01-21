@@ -63,24 +63,26 @@ def process_telemetry_conformance_message(sender, **kwargs):
         event = "ua_departs_early_late"
 
     elif non_conformance_state_code == "C7a":
+        aircraft_bounds_nonconformant_msg = (
+            "The telemetry location provided for operation {flight_declaration_id}, is not within the declared bounds for an operation. C7a check failed.".format(
+                flight_declaration_id=flight_declaration_id
+            )
+        )
+        detailed_non_conformance_message = aircraft_bounds_nonconformant_msg
+        logger.error(aircraft_bounds_nonconformant_msg)
+        my_operation_notification.send_conformance_status_notification(message=aircraft_bounds_nonconformant_msg, level="error")
+        new_state = 3
+        event = "ua_exits_coordinated_op_intent"
+
+    elif non_conformance_state_code == "C7b":
         aircraft_altitude_nonconformant_msg = (
-            "The telemetry timestamp provided for operation {flight_declaration_id}, is not within the altitude bounds C7a check failed.".format(
+            "The telemetry altitude provided for operation {flight_declaration_id}, is not within the altitude bounds. C7b check failed.".format(
                 flight_declaration_id=flight_declaration_id
             )
         )
         detailed_non_conformance_message = aircraft_altitude_nonconformant_msg
         logger.error(aircraft_altitude_nonconformant_msg)
         my_operation_notification.send_conformance_status_notification(message=aircraft_altitude_nonconformant_msg, level="error")
-        new_state = 3
-        event = "ua_exits_coordinated_op_intent"
-
-    elif non_conformance_state_code == "C7b":
-        aircraft_bounds_nonconformant_msg = "The telemetry location provided for operation {flight_declaration_id}, is not within the declared bounds for an operation. C7b check failed.".format(
-            flight_declaration_id=flight_declaration_id
-        )
-        detailed_non_conformance_message = aircraft_bounds_nonconformant_msg
-        logger.error(aircraft_bounds_nonconformant_msg)
-        my_operation_notification.send_conformance_status_notification(message=aircraft_bounds_nonconformant_msg, level="error")
         new_state = 3
         event = "ua_exits_coordinated_op_intent"
 

@@ -22,6 +22,8 @@ ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
 
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
+
 from loguru import logger
 
 
@@ -80,6 +82,7 @@ class USSConstraintsOperations:
                 query_constraint_references_url,
                 json=json.loads(json.dumps(asdict(area_of_interest))),
                 headers=headers,
+                timeout=REQUEST_TIMEOUT_S,
             )
         except Exception as re:
             logger.error("Error in getting operational intent for the volume %s " % re)
@@ -116,7 +119,11 @@ class USSConstraintsOperations:
 
         constraint_details_retrived = False
         try:
-            uss_constraint_details_request = requests.get(uss_constraint_details_url, headers=uss_headers)
+            uss_constraint_details_request = requests.get(
+                uss_constraint_details_url,
+                headers=uss_headers,
+                timeout=REQUEST_TIMEOUT_S,
+            )
         except urllib3.exceptions.NameResolutionError:
             logger.info("URLLIB error")
             raise ConnectionError("Could not reach peer USS.. ")

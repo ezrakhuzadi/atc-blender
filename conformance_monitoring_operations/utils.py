@@ -19,6 +19,60 @@ ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
 
+def build_polygon_altitudes_from_volumes(volumes) -> tuple[list[PolygonAltitude], list[float]]:
+    """Convert supported volume representations into Shapely polygons + altitude ranges.
+
+    Supported volume types:
+      - dict payloads (as stored in operational_intent JSON)
+      - Volume4D-like objects with `volume.outline_polygon.vertices` and altitude values
+      - SCDVolume4D-like objects stored in flight declarations
+    """
+    polygon_altitudes: list[PolygonAltitude] = []
+    all_altitudes: list[float] = []
+
+    if not volumes:
+        return polygon_altitudes, all_altitudes
+
+    for volume in volumes:
+        try:
+            v4d = cast_to_volume4d(volume) if isinstance(volume, dict) else volume
+            volume_3d = getattr(v4d, "volume", None)
+            if not volume_3d:
+                continue
+
+            altitude_lower = getattr(getattr(volume_3d, "altitude_lower", None), "value", None)
+            altitude_upper = getattr(getattr(volume_3d, "altitude_upper", None), "value", None)
+            if altitude_lower is None or altitude_upper is None:
+                continue
+            all_altitudes.append(float(altitude_lower))
+            all_altitudes.append(float(altitude_upper))
+
+            outline_polygon = getattr(volume_3d, "outline_polygon", None)
+            if not outline_polygon:
+                continue
+
+            vertices = list(getattr(outline_polygon, "vertices", []) or [])
+            if len(vertices) >= 2 and vertices[0].lat == vertices[-1].lat and vertices[0].lng == vertices[-1].lng:
+                vertices.pop()
+            if len(vertices) < 3:
+                continue
+
+            polygon = Plgn([(vertex.lng, vertex.lat) for vertex in vertices])
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
+            polygon_altitudes.append(
+                PolygonAltitude(
+                    polygon=polygon,
+                    altitude_upper=float(altitude_upper),
+                    altitude_lower=float(altitude_lower),
+                )
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to parse volume for conformance checks: {exc}")
+            continue
+
+    return polygon_altitudes, all_altitudes
+
 
 def is_time_between(begin_time, end_time, check_time=None):
     # If check time is not given, default to current UTC time
@@ -114,22 +168,7 @@ class FlightBlenderConformanceEngine:
         lat = float(telemetry_location.lat)
         rid_location = Point(lng, lat)
         logger.info(f"Checking C7 Conformance for location {rid_location.wkt}...")
-        all_polygon_altitudes: list[PolygonAltitude] = []
-
-        for v in all_volumes:
-            v4d = cast_to_volume4d(v)
-            altitude_lower = v4d.volume.altitude_lower.value
-            altitude_upper = v4d.volume.altitude_upper.value
-            outline_polygon = v4d.volume.outline_polygon
-            point_list = [Point(vertex.lng, vertex.lat) for vertex in outline_polygon.vertices]
-            outline_polygon = Plgn([[p.x, p.y] for p in point_list])
-
-            pa = PolygonAltitude(
-                polygon=outline_polygon,
-                altitude_upper=altitude_upper,
-                altitude_lower=altitude_lower,
-            )
-            all_polygon_altitudes.append(pa)
+        all_polygon_altitudes, _ = build_polygon_altitudes_from_volumes(all_volumes)
 
         rid_obs_within_all_volumes = []
         rid_obs_within_altitudes = []

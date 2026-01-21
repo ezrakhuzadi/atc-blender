@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "notification_operations",
     "rid_operations",
     "weather_monitoring_operations",
+    "utm_adapter",
 ]
 
 MIDDLEWARE = [
@@ -98,7 +99,7 @@ ASGI_APPLICATION = "flight_blender.asgi.application"
 
 
 DATABASES = {}
-USE_LOCAL_SQLITE_DATABASE = os.getenv("USE_LOCAL_SQLITE_DATABASE", 0)
+USE_LOCAL_SQLITE_DATABASE = int(os.getenv("USE_LOCAL_SQLITE_DATABASE", "0"))
 if USE_LOCAL_SQLITE_DATABASE:
     DATABASES = {
         "default": {
@@ -107,7 +108,13 @@ if USE_LOCAL_SQLITE_DATABASE:
         }
     }
 else:
-    DATABASES["default"] = dj_database_url.config(conn_max_age=600)
+    db_config = dj_database_url.config(conn_max_age=600)
+    if not db_config:
+        db_config = {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": os.path.join(BASE_DIR, "flight_blender.sqlite3"),
+        }
+    DATABASES["default"] = db_config
 
 # Password validation
 # https://docs.djangoproject.com/en/3.1/ref/settings/#auth-password-validators

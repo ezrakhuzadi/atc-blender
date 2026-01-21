@@ -1,22 +1,29 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal
 
+from common.geo_types import (
+    Altitude,
+    Circle,
+    LatLngPoint,
+    OperationalIntentState,
+    Polygon,
+    Radius,
+    SubscriptionState,
+    Time,
+    Volume3D,
+    Volume4D,
+)
 from rid_operations.rid_utils import RIDFlightDetails
+from scd_operations.scd_data_definitions import (
+    OperationalIntentDetailsUSSResponse,
+    OperationalIntentReferenceDSSResponse,
+    OperationalIntentUSSDetails,
+)
 
 
-# TODO: Need to consolidate all data_definitions across different apps
 @dataclass
 class OperationalIntentNotFoundResponse:
     message: str
-
-
-@dataclass
-class Time:
-    """A class to hold time objects"""
-
-    format: str
-    value: str
 
 
 @dataclass
@@ -43,113 +50,6 @@ class FlightDetailsNotFoundMessage:
 @dataclass
 class OperatorDetailsSuccessResponse:
     details: RIDFlightDetails
-
-
-@dataclass
-class SubscriptionState:
-    subscription_id: str
-    notification_index: int
-
-
-@dataclass
-class LatLngPoint:
-    """A clas to hold information about LatLngPoint"""
-
-    lat: float
-    lng: float
-
-
-@dataclass
-class Radius:
-    """A class to hold the radius object"""
-
-    value: float
-    units: str
-
-
-@dataclass
-class Polygon:
-    """A class to hold the polygon object"""
-
-    vertices: list[LatLngPoint]  # A minimum of three LatLngPoints
-
-
-@dataclass
-class Circle:
-    """Hold the details of a circle object"""
-
-    center: LatLngPoint
-    radius: Radius
-
-
-@dataclass
-class Altitude:
-    """A class to hold altitude"""
-
-    value: int | float
-    reference: str
-    units: str
-
-
-@dataclass
-class Volume3D:
-    """A class to hold Volume3D objects"""
-
-    outline_polygon: Polygon
-    altitude_lower: Altitude
-    altitude_upper: Altitude
-    outline_circle: Circle | None = None
-
-
-class OperationalIntentState(str, Enum):
-    """A test is either pass or fail or could not be processed, currently not"""
-
-    Accepted = "Accepted"
-    Activated = "Activated"
-    Nonconforming = "Nonconforming"
-    Contingent = "Contingent"
-
-
-@dataclass
-class Volume4D:
-    """A class to hold Volume4D objects"""
-
-    volume: Volume3D
-    time_start: Time
-    time_end: Time
-
-
-@dataclass
-class OperationalIntentReferenceDSSResponse:
-    id: str
-    manager: str
-    uss_availability: str
-    version: int
-    state: Literal[
-        OperationalIntentState.Accepted,
-        OperationalIntentState.Activated,
-        OperationalIntentState.Nonconforming,
-        OperationalIntentState.Contingent,
-    ]
-    ovn: str
-    time_start: Time
-    time_end: Time
-    uss_base_url: str
-    subscription_id: str
-
-
-@dataclass
-class OperationalIntentUSSDetails:
-    volumes: list[Volume4D]
-    priority: int
-    off_nominal_volumes: list[Volume4D] | None
-
-
-@dataclass
-class OperationalIntentDetailsUSSResponse:
-    reference: OperationalIntentReferenceDSSResponse
-    details: OperationalIntentUSSDetails
-
 
 @dataclass
 class OperationalIntentDetails:

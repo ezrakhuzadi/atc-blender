@@ -1,5 +1,6 @@
 import json
 from dataclasses import asdict
+from os import environ as env
 
 import arrow
 import requests
@@ -15,13 +16,15 @@ from .common import GeoZoneParser
 from .data_definitions import GeoAwarenessTestStatus, GeoZone
 from .models import GeoFence
 
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
+
 
 @app.task(name="download_geozone_source")
 def download_geozone_source(geo_zone_url: str, geozone_source_id: str):
     r = get_redis()
     geoawareness_test_data_store = "geoawarenes_test." + str(geozone_source_id)
     try:
-        geo_zone_request = requests.get(geo_zone_url)
+        geo_zone_request = requests.get(geo_zone_url, timeout=REQUEST_TIMEOUT_S)
     except ConnectionError as ce:
         logger.error("Error in downloading data from Geofence url")
         logger.error(ce)

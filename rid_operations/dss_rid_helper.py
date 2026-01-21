@@ -65,6 +65,8 @@ ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
 
+REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
+
 
 geod = Geod(ellps="WGS84")
 
@@ -269,6 +271,7 @@ class RemoteIDOperations:
                 dss_isa_create_url,
                 json=json.loads(json.dumps(p_dict)),
                 headers=headers,
+                timeout=REQUEST_TIMEOUT_S,
             )
         except Exception as re:
             logger.error("Error in posting to DSS URL %s " % re)
@@ -344,7 +347,12 @@ class RemoteIDOperations:
             }
             response = None
             try:
-                response = requests.post(url, headers=headers, json=json.loads(json.dumps(payload)))
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=json.loads(json.dumps(payload)),
+                    timeout=REQUEST_TIMEOUT_S,
+                )
             except Exception as re:
                 logger.error(f"Error in sending subscriber notification to {url} :  {re} ")
                 continue
@@ -437,7 +445,12 @@ class RemoteIDOperations:
             }
 
             try:
-                dss_r = requests.put(dss_subscription_url, json=payload, headers=headers)
+                dss_r = requests.put(
+                    dss_subscription_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT_S,
+                )
             except Exception as re:
                 logger.error("Error in posting to subscription URL %s " % re)
                 return self._fallback_subscription(
@@ -581,7 +594,7 @@ class RemoteIDOperations:
         }
         dss_subscription_url = f"{self.dss_base_url}/rid/v2/dss/subscriptions/{subscription_id}"
         try:
-            dss_r = requests.delete(dss_subscription_url, headers=headers)
+            dss_r = requests.delete(dss_subscription_url, headers=headers, timeout=REQUEST_TIMEOUT_S)
         except Exception as re:
             logger.error("Error in deleting DSS subscription %s " % re)
             return False
@@ -619,7 +632,11 @@ class RemoteIDOperations:
         flight_details_exist = my_database_reader.check_flight_details_exist(flight_detail_id=flight_id)
         if not flight_details_exist:
             # Get and store the flight details
-            flight_details_request = requests.get(rid_flight_details_query_url, headers=headers)
+            flight_details_request = requests.get(
+                rid_flight_details_query_url,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT_S,
+            )
             if flight_details_request.status_code != 200:
                 logger.info("Error in retrieving flight details for %s" % flight_id)
                 logger.error(flight_details_request.text)
@@ -690,7 +707,11 @@ class RemoteIDOperations:
                 headers["Authorization"] = "Bearer " + access_token
             else:
                 logger.warning("RID auth token missing for %s; requesting without auth", audience)
-            flights_request = requests.get(rid_query_url, headers=headers)
+            flights_request = requests.get(
+                rid_query_url,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT_S,
+            )
 
             if flights_request.status_code == 200:
                 # https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/uastech/standards/dd4016b09fc8cb98f30c2a17b5a088fb2995ab54/remoteid/canonical.yaml

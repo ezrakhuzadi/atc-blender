@@ -29,6 +29,10 @@ urlpatterns = [
         "v1/operational_intents/<uuid:opint_id>/telemetry",
         uss_operations_views.USSOpIntDetailTelemetry,
     ),
+    path(
+        "v1/operational_intents/<uuid:entity_id>/off_nominal_position",
+        uss_operations_views.USSOffNominalPositionDetails,
+    ),
     path("v1/operational_intents", uss_operations_views.uss_update_opint_details),
     path("v1/constraints/<uuid:constraint_id>", uss_operations_views.uss_constraint_details),
     path("v1/constraints", uss_operations_views.uss_update_constraint_details),
