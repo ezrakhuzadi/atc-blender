@@ -1,4 +1,0 @@
-This file intentionally does not contain Redis data.
-
-A previous commit accidentally included a Redis dump (dump.rdb). The contents were removed.
-If you are running Redis/Valkey locally, it will create its own dump file in its data directory.

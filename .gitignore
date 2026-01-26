@@ -102,6 +102,10 @@ __pypackages__/
 celerybeat-schedule
 celerybeat.pid
 
+# Redis/Valkey state
+dump.rdb
+*.rdb
+
 
 # SageMath parsed files
 *.sage.py
