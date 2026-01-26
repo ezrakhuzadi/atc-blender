@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 
 import os
+import secrets
 from pathlib import Path
 
 import dj_database_url
@@ -27,12 +28,34 @@ if ENV_FILE:
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY", "DJANGO_SECRET")
+def env_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    value = str(raw).strip().lower()
+    if value in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if value in {"0", "false", "f", "no", "n", "off", ""}:
+        return False
+    return default
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("IS_DEBUG", False)
-DEBUG = int(DEBUG) if isinstance(DEBUG, str) else DEBUG
+DEBUG = env_bool("IS_DEBUG", False)
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = secrets.token_urlsafe(64)
+    else:
+        raise RuntimeError("SECRET_KEY must be set when IS_DEBUG=0")
+
+BYPASS_AUTH_TOKEN_VERIFICATION = env_bool("BYPASS_AUTH_TOKEN_VERIFICATION", False)
+if BYPASS_AUTH_TOKEN_VERIFICATION and not DEBUG:
+    raise RuntimeError("BYPASS_AUTH_TOKEN_VERIFICATION must not be enabled when IS_DEBUG=0")
+
+if not DEBUG and SECRET_KEY in {"DJANGO_SECRET", "change-me-django-secret-key", "change-me-secret-key"}:
+    raise RuntimeError("SECRET_KEY is using a placeholder value; set SECRET_KEY to a secure random string")
 
 if DEBUG:
     ALLOWED_HOSTS = ["*"]
