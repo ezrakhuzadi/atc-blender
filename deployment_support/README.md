@@ -17,7 +17,7 @@ This quick start is for local development/testing only. For a more detailed "Pro
 
 ### 1. Create .env File
 
-For this quick start, we will use the [sample .env](https://github.com/openutm/flight-blender/blob/master/deployment_support/.env.local) file. You can copy the file to create a new .env file. We will go over the details of the file below.
+For this quick start, copy `deployment_support/.env.local.example` to `deployment_support/.env.local` and replace the `change-me-*` values. We will go over the details of the file below.
 
 | Variable Key | Data Type | Description |
 |--------------|--------------|:-----:|
