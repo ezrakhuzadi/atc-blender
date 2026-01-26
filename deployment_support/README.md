@@ -17,7 +17,7 @@ This quick start is for local development/testing only. For a more detailed "Pro
 
 ### 1. Create .env File
 
-For this quick start, copy `deployment_support/.env.local.example` to `deployment_support/.env.local` and replace the `change-me-*` values. We will go over the details of the file below.
+For this quick start, copy `.env.example` (repo root) to `.env` and replace the `change-me-*` values. Docker Compose reads `.env` for variable substitution and loads it via `env_file`. The `.env` file is ignored by git to prevent accidental secret commits.
 
 | Variable Key | Data Type | Description |
 |--------------|--------------|:-----:|
