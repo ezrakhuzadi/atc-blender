@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from uss_operations.uss_data_definitions import Volume4D
+from common.geo_types import Volume4D
 
 
 class FlightPlanningStatusResponse(str, enum.Enum):
