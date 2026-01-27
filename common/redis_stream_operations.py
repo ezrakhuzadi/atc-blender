@@ -1,3 +1,4 @@
+import ast
 import json
 import uuid
 from typing import List, Optional
@@ -178,11 +179,22 @@ class RedisStreamOperations:
                 value = value.decode("utf-8")
             field_data[key] = value
 
+        raw_observations = field_data.get("observations", "[]")
+        try:
+            observations = json.loads(raw_observations)
+        except json.JSONDecodeError:
+            try:
+                observations = ast.literal_eval(raw_observations)
+            except (ValueError, SyntaxError):
+                observations = []
+        if not isinstance(observations, list):
+            observations = []
+
         active_track = ActiveTrack(
             session_id=field_data.get("session_id", ""),
             unique_aircraft_identifier=field_data.get("unique_aircraft_identifier", ""),
             last_updated_timestamp=field_data.get("last_updated_timestamp", ""),
-            observations=eval(field_data.get("observations", "[]")),
+            observations=observations,
         )
         logger.debug(f"Retrieved active track for key '{track_key}': {active_track}")
         return active_track
@@ -200,7 +212,7 @@ class RedisStreamOperations:
             "session_id": active_track.session_id,
             "unique_aircraft_identifier": active_track.unique_aircraft_identifier,
             "last_updated_timestamp": active_track.last_updated_timestamp,
-            "observations": str(active_track.observations),
+            "observations": json.dumps(active_track.observations),
         }
         self.redis.hmset(track_key, track_data)
         logger.info(f"Added active track to Redis with key '{track_key}': {active_track}")
@@ -218,7 +230,7 @@ class RedisStreamOperations:
             "session_id": active_track.session_id,
             "unique_aircraft_identifier": active_track.unique_aircraft_identifier,
             "last_updated_timestamp": active_track.last_updated_timestamp,
-            "observations": str(active_track.observations),
+            "observations": json.dumps(active_track.observations),
         }
         self.redis.hmset(track_key, track_data)
         logger.info(f"Updated active track in Redis with key '{track_key}': {active_track}")
