@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from functools import wraps
 from os import environ as env
 from urllib.parse import urlparse
@@ -13,6 +15,100 @@ from loguru import logger
 load_dotenv(find_dotenv())
 
 REQUEST_TIMEOUT_S = float(env.get("HTTP_TIMEOUT_S", "10"))
+JWKS_CACHE_TTL_S = float(env.get("JWKS_CACHE_TTL_S", "300"))
+JWKS_FETCH_BACKOFF_INITIAL_S = float(env.get("JWKS_FETCH_BACKOFF_INITIAL_S", "1"))
+JWKS_FETCH_BACKOFF_MAX_S = float(env.get("JWKS_FETCH_BACKOFF_MAX_S", "60"))
+
+_JWKS_CACHE_LOCK = threading.Lock()
+_JWKS_CACHE = {}
+
+
+class JwksFetchError(Exception):
+    def __init__(self, url: str, message: str):
+        super().__init__(message)
+        self.url = url
+        self.message = message
+
+
+def _now_s() -> float:
+    return time.time()
+
+
+def _build_public_keys(jwks: dict) -> dict:
+    keys = {}
+    for jwk in jwks.get("keys", []):
+        if not isinstance(jwk, dict):
+            continue
+        kid = jwk.get("kid")
+        if not kid:
+            continue
+        try:
+            keys[kid] = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"Skipping invalid JWK kid={kid}: {error}")
+    return keys
+
+
+def _get_jwks_cached(url: str, session: requests.Session, *, force_refresh: bool, required: bool, label: str) -> tuple[dict, dict]:
+    now = _now_s()
+    with _JWKS_CACHE_LOCK:
+        entry = _JWKS_CACHE.get(url)
+        if not entry:
+            entry = {
+                "jwks": None,
+                "public_keys": {},
+                "expires_at": 0.0,
+                "next_retry_at": 0.0,
+                "backoff_s": max(JWKS_FETCH_BACKOFF_INITIAL_S, 0.1),
+            }
+            _JWKS_CACHE[url] = entry
+
+        jwks = entry.get("jwks")
+        public_keys = entry.get("public_keys") or {}
+        expires_at = float(entry.get("expires_at") or 0.0)
+        next_retry_at = float(entry.get("next_retry_at") or 0.0)
+
+        if not force_refresh and jwks and now < expires_at:
+            return jwks, public_keys
+
+        if not force_refresh and now < next_retry_at:
+            if jwks:
+                return jwks, public_keys
+            if required:
+                raise JwksFetchError(url, f"{label} JWKS fetch is in backoff and no cached keys exist.")
+            return {}, {}
+
+    try:
+        response = session.get(url, timeout=REQUEST_TIMEOUT_S)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("JWKS response was not a JSON object")
+        public_keys = _build_public_keys(data)
+        now = _now_s()
+        with _JWKS_CACHE_LOCK:
+            entry = _JWKS_CACHE[url]
+            entry["jwks"] = data
+            entry["public_keys"] = public_keys
+            entry["expires_at"] = now + max(JWKS_CACHE_TTL_S, 0.0)
+            entry["next_retry_at"] = 0.0
+            entry["backoff_s"] = max(JWKS_FETCH_BACKOFF_INITIAL_S, 0.1)
+        return data, public_keys
+    except (requests.exceptions.RequestException, ValueError) as error:
+        logger.error(f"Error fetching {label} JWKS: {error}")
+        now = _now_s()
+        with _JWKS_CACHE_LOCK:
+            entry = _JWKS_CACHE[url]
+            jwks = entry.get("jwks")
+            public_keys = entry.get("public_keys") or {}
+            backoff_s = float(entry.get("backoff_s") or max(JWKS_FETCH_BACKOFF_INITIAL_S, 0.1))
+            entry["next_retry_at"] = now + backoff_s
+            entry["backoff_s"] = min(backoff_s * 2.0, max(JWKS_FETCH_BACKOFF_MAX_S, backoff_s))
+        if jwks:
+            return jwks, public_keys
+        if required:
+            raise JwksFetchError(url, f"{label} JWKS could not be fetched and no cached keys exist.")
+        return {}, {}
 
 def jwt_get_username_from_payload_handler(payload):
     username = payload.get("sub").replace("|", ".")
@@ -77,32 +173,35 @@ def requires_scopes(required_scopes, allow_any: bool = False):
                 return handle_bypass_verification(token, required_scopes, f, *args, **kwargs)
 
             try:
-                passport_jwks_data_response = s.get(PASSPORT_JWKS_URL, timeout=REQUEST_TIMEOUT_S)
-                passport_jwks_data = passport_jwks_data_response.json()
-
-            except requests.exceptions.RequestException as e:
-                passport_jwks_data = {}
-                logger.error(f"Error fetching Passport JWKS: {e}")
+                _, passport_public_keys = _get_jwks_cached(
+                    PASSPORT_JWKS_URL, s, force_refresh=False, required=True, label="Passport"
+                )
+            except JwksFetchError:
                 return JsonResponse(
                     {"detail": f"Public Key Server necessary to validate the token could not be reached, tried to reach URL: {PASSPORT_JWKS_URL}"},
-                    status=400,
+                    status=503,
                 )
             try:
-                dss_jwks_data = s.get(DSS_AUTH_JWKS_ENDPOINT, timeout=REQUEST_TIMEOUT_S).json()
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error fetching DSS JWKS: {e}")
-                dss_jwks_data = {}
+                _, dss_public_keys = _get_jwks_cached(DSS_AUTH_JWKS_ENDPOINT, s, force_refresh=False, required=False, label="DSS")
+            except JwksFetchError:
+                dss_public_keys = {}
                 logger.info(
                     f"DSS Public Key Server necessary to validate the token could not be reached, tokens for DSS operations will not be validated, tried to reach URL:{DSS_AUTH_JWKS_ENDPOINT}"
                 )
-            # Combine keys from both JWKS sources
-            jwks_keys = passport_jwks_data.get("keys", []) + dss_jwks_data.get("keys", [])
-            jwks_data = {"keys": jwks_keys}
-
-            public_keys = {jwk["kid"]: jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk)) for jwk in jwks_data["keys"]}
+            public_keys = {**passport_public_keys, **dss_public_keys}
 
             kid = unverified_token_headers.get("kid")
             if not kid or kid not in public_keys:
+                try:
+                    _, passport_public_keys = _get_jwks_cached(
+                        PASSPORT_JWKS_URL, s, force_refresh=True, required=True, label="Passport"
+                    )
+                    _, dss_public_keys = _get_jwks_cached(
+                        DSS_AUTH_JWKS_ENDPOINT, s, force_refresh=True, required=False, label="DSS"
+                    )
+                    public_keys = {**passport_public_keys, **dss_public_keys}
+                except JwksFetchError:
+                    pass
                 return JsonResponse(
                     {"detail": f"Error in parsing public keys, the signing key id {kid} is not present in JWKS"},
                     status=401,
