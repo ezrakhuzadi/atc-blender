@@ -2,6 +2,10 @@
 
 ![blender-logo](images/blender-logo.jpg)
 
+## About (ATC Stack)
+
+In this project, Flight Blender provides the standards-based UTM integration layer. It bridges Remote ID, DSS interoperability, and geofence services for the ATC stack, and can be run standalone or via the unified `atc-stack` Compose environment.
+
 Flight Blender is an open-source backend and data-processing engine designed to support standards-compliant UTM (Unmanned Traffic Management) services. It adheres to the latest regulations for UTM/U-Space in the EU and other jurisdictions. With Flight Blender, you can:
 
 - Implement a Remote ID "service provider" compatible with the ASTM-F3411 Remote ID standard, along with Flight Spotlight, an open-source Remote ID Display Application.
