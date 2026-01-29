@@ -59,8 +59,26 @@ BYPASS_AUTH_TOKEN_VERIFICATION = env_bool("BYPASS_AUTH_TOKEN_VERIFICATION", Fals
 if BYPASS_AUTH_TOKEN_VERIFICATION and not DEBUG:
     raise RuntimeError("BYPASS_AUTH_TOKEN_VERIFICATION must not be enabled when IS_DEBUG=0")
 
-if not DEBUG and SECRET_KEY in {"DJANGO_SECRET", "change-me-django-secret-key", "change-me-secret-key"}:
-    raise RuntimeError("DJANGO_SECRET_KEY is using a placeholder value; set DJANGO_SECRET_KEY to a secure random string")
+def looks_like_placeholder_secret(value: str) -> bool:
+    lowered = value.strip().lower()
+    if not lowered:
+        return True
+    if "change-me" in lowered:
+        return True
+    if lowered.startswith("django-insecure"):
+        return True
+    return lowered in {"django_secret", "change-me-django-secret-key", "change-me-secret-key"}
+
+
+def validate_django_secret_key(value: str) -> None:
+    if looks_like_placeholder_secret(value):
+        raise RuntimeError("DJANGO_SECRET_KEY is using a placeholder value; set DJANGO_SECRET_KEY to a secure random string")
+    if len(value) < 32:
+        raise RuntimeError("DJANGO_SECRET_KEY is too short; set DJANGO_SECRET_KEY to a secure random string (>= 32 chars)")
+
+
+if not DEBUG:
+    validate_django_secret_key(SECRET_KEY)
 
 # Optional: key used for JOSE/JWKS signing (separate from Django's SECRET_KEY).
 OIDC_SIGNING_PRIVATE_KEY_PEM = (os.getenv("OIDC_SIGNING_PRIVATE_KEY_PEM") or "").strip()
