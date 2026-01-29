@@ -249,7 +249,7 @@ class ResponseSigningOperations:
         Sign a JSON payload using the OIDC private key and return the signed JWS.
 
         This method uses the RS256 algorithm to sign the provided JSON payload.
-        The private key is retrieved from the environment variable 'SECRET_KEY'.
+        The private key is retrieved from the environment variable 'OIDC_SIGNING_PRIVATE_KEY_PEM'.
         If the key is available and valid, the payload is signed and the JWS token
         is returned in a dictionary format. If the key is not available or invalid,
         an empty dictionary is returned.
@@ -264,7 +264,7 @@ class ResponseSigningOperations:
 
         """
         algorithm = "RS256"
-        private_key_pem = env.get("SECRET_KEY", None)
+        private_key_pem = env.get("OIDC_SIGNING_PRIVATE_KEY_PEM", None)
 
         if not private_key_pem:
             return {}

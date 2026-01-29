@@ -6,11 +6,11 @@ from os import environ as env
 
 import arrow
 import dacite
+from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 from dotenv import find_dotenv, load_dotenv
-from jwcrypto import jwk
 from loguru import logger
 from marshmallow import ValidationError
 from rest_framework import generics
@@ -62,24 +62,11 @@ class ASGIHomeView(TemplateView):
 @api_view(["GET"])
 def public_key_view(request):
     # Source: https://github.com/jazzband/django-oauth-toolkit/blob/016c6c3bf62c282991c2ce3164e8233b81e3dd4d/oauth2_provider/views/oidc.py#L105
-    keys = []
-    private_key = env.get("SECRET_KEY", None)
-
-    if private_key:
-        try:
-            for pem in [private_key]:
-                key = jwk.JWK.from_pem(pem.encode("utf8"))
-                data = {"alg": "RS256", "use": "sig", "kid": key.thumbprint()}
-                data.update(json.loads(key.export_public()))
-                keys.append(data)
-
-            response = JsonResponse({"keys": keys})
-            response["Access-Control-Allow-Origin"] = "*"
-        except Exception:
-            response = JsonResponse({})
-    else:
-        response = JsonResponse({})
-
+    jwks = getattr(settings, "OIDC_SIGNING_PUBLIC_JWKS", {"keys": []})
+    if not isinstance(jwks, dict):
+        jwks = {"keys": []}
+    response = JsonResponse(jwks)
+    response["Access-Control-Allow-Origin"] = "*"
     return response
 
 

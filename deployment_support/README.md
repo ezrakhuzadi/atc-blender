@@ -21,7 +21,8 @@ For this quick start, copy `.env.example` (repo root) to `.env` and replace the 
 
 | Variable Key | Data Type | Description |
 |--------------|--------------|:-----:|
-| SECRET_KEY | string | This is used in Django. It is recommended that you use a long SECRET Key as a string here. |
+| DJANGO_SECRET_KEY | string | Django secret (sessions/signing). Use a strong random string. |
+| OIDC_SIGNING_PRIVATE_KEY_PEM | string | (Optional) RSA private key PEM used for JOSE signing + `/signing_public_key` JWKS publishing. Keep separate from Django secret. |
 | IS_DEBUG | integer | Set this as 1 if you are using it locally. |
 | BYPASS_AUTH_TOKEN_VERIFICATION | integer | Set this as 1 if you are using it locally or using NoAuth or Dummy tokens. **NOTE** Please remove this field totally for any production deployments, as it will bypass token verification and will be a security risk. |
 | ALLOWED_HOSTS | string | This is used in Django. It is recommended that if you are not using IS_DEBUG above, then this needs to be set as the domain name. If you are using IS_DEBUG above, then the system automatically allows all hosts. |

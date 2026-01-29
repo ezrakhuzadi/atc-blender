@@ -43,19 +43,38 @@ def env_bool(key: str, default: bool = False) -> bool:
 DEBUG = env_bool("IS_DEBUG", False)
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
+DJANGO_SECRET_KEY = (os.getenv("DJANGO_SECRET_KEY") or "").strip()
+LEGACY_SECRET_KEY = (os.getenv("SECRET_KEY") or "").strip()
+if DJANGO_SECRET_KEY:
+    SECRET_KEY = DJANGO_SECRET_KEY
+elif LEGACY_SECRET_KEY:
+    SECRET_KEY = LEGACY_SECRET_KEY
+else:
     if DEBUG:
         SECRET_KEY = secrets.token_urlsafe(64)
     else:
-        raise RuntimeError("SECRET_KEY must be set when IS_DEBUG=0")
+        raise RuntimeError("DJANGO_SECRET_KEY (or legacy SECRET_KEY) must be set when IS_DEBUG=0")
 
 BYPASS_AUTH_TOKEN_VERIFICATION = env_bool("BYPASS_AUTH_TOKEN_VERIFICATION", False)
 if BYPASS_AUTH_TOKEN_VERIFICATION and not DEBUG:
     raise RuntimeError("BYPASS_AUTH_TOKEN_VERIFICATION must not be enabled when IS_DEBUG=0")
 
 if not DEBUG and SECRET_KEY in {"DJANGO_SECRET", "change-me-django-secret-key", "change-me-secret-key"}:
-    raise RuntimeError("SECRET_KEY is using a placeholder value; set SECRET_KEY to a secure random string")
+    raise RuntimeError("DJANGO_SECRET_KEY is using a placeholder value; set DJANGO_SECRET_KEY to a secure random string")
+
+# Optional: key used for JOSE/JWKS signing (separate from Django's SECRET_KEY).
+OIDC_SIGNING_PRIVATE_KEY_PEM = (os.getenv("OIDC_SIGNING_PRIVATE_KEY_PEM") or "").strip()
+OIDC_SIGNING_PUBLIC_JWKS = {"keys": []}
+if OIDC_SIGNING_PRIVATE_KEY_PEM:
+    try:
+        from jwcrypto import jwk  # imported only when signing is configured
+
+        _oidc_key = jwk.JWK.from_pem(OIDC_SIGNING_PRIVATE_KEY_PEM.encode("utf-8"))
+        public_data = {"alg": "RS256", "use": "sig", "kid": _oidc_key.thumbprint()}
+        public_data.update(_oidc_key.export_public(as_dict=True))
+        OIDC_SIGNING_PUBLIC_JWKS = {"keys": [public_data]}
+    except Exception as error:  # noqa: BLE001
+        raise RuntimeError("OIDC_SIGNING_PRIVATE_KEY_PEM must be a valid RSA private key PEM") from error
 
 if DEBUG:
     ALLOWED_HOSTS = ["*"]

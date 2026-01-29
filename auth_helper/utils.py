@@ -7,8 +7,6 @@ from urllib.parse import urlparse
 
 import jwt
 import requests
-from django.contrib.auth import authenticate
-from django.http import JsonResponse
 from dotenv import find_dotenv, load_dotenv
 from loguru import logger
 
@@ -111,6 +109,8 @@ def _get_jwks_cached(url: str, session: requests.Session, *, force_refresh: bool
         return {}, {}
 
 def jwt_get_username_from_payload_handler(payload):
+    from django.contrib.auth import authenticate
+
     username = payload.get("sub").replace("|", ".")
     authenticate(remote_user=username)
     return username
@@ -142,6 +142,8 @@ def requires_scopes(required_scopes, allow_any: bool = False):
     def require_scope(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            from django.http import JsonResponse
+
             API_IDENTIFIER = env.get("PASSPORT_AUDIENCE", "testflight.flightblender.com")
             BYPASS_AUTH_TOKEN_VERIFICATION = int(env.get("BYPASS_AUTH_TOKEN_VERIFICATION", 0))
             IS_DEBUG = int(env.get("IS_DEBUG", 0))
@@ -242,6 +244,8 @@ def requires_scopes(required_scopes, allow_any: bool = False):
 
 
 def handle_bypass_verification(token, required_scopes, f, *args, **kwargs):
+    from django.http import JsonResponse
+
     try:
         unverified_token_details = jwt.decode(token, algorithms=["RS256"], options={"verify_signature": False})
     except jwt.DecodeError:
