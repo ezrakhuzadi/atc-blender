@@ -4,9 +4,24 @@ set -euo pipefail
 FLIGHT_BLENDER_ROOT="."
 
 RESET_VOLUMES=0
-if [ "${1:-}" = "--reset" ]; then
-    RESET_VOLUMES=1
-fi
+COMPOSE_FILE="docker-compose.yml"
+for arg in "$@"; do
+    case "${arg}" in
+        --reset)
+            RESET_VOLUMES=1
+            ;;
+        --dev)
+            COMPOSE_FILE="docker-compose-dev.yml"
+            ;;
+        *)
+            echo "Unknown argument: ${arg}"
+            echo "Usage: $0 [--dev] [--reset]"
+            exit 1
+            ;;
+    esac
+done
+
+COMPOSE_ARGS=(-f "${COMPOSE_FILE}")
 
 # Only copy .env.sample if .env doesn't exist
 if [ ! -f ".env" ] && [ -f ".env.sample" ]; then
@@ -30,9 +45,9 @@ cd "${FLIGHT_BLENDER_ROOT}"
 
 if [ "${RESET_VOLUMES}" -eq 1 ]; then
     echo "Resetting Flight Blender compose stack (project-scoped): removing containers + volumes..."
-    docker compose down -v --remove-orphans
+    docker compose "${COMPOSE_ARGS[@]}" down -v --remove-orphans
 else
-    docker compose down --remove-orphans
+    docker compose "${COMPOSE_ARGS[@]}" down --remove-orphans
 fi
 
-docker compose up --build
+docker compose "${COMPOSE_ARGS[@]}" up --build

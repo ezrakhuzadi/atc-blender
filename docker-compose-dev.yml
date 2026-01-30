@@ -3,7 +3,7 @@ services:
   redis-blender:
     platform: linux/amd64
     command: ["redis-server", "/redis.conf", "--requirepass", "$REDIS_PASSWORD"]
-    image: "valkey/valkey:latest"
+    image: "valkey/valkey@sha256:546304417feac0874c3dd576e0952c6bb8f06bb4093ea0c9ca303c73cf458f63"
     expose:
       - "6379"
     volumes:
@@ -16,7 +16,7 @@ services:
   db-blender:
     platform: linux/amd64
     container_name: "db-blender"
-    image: postgres:17
+    image: "postgres@sha256:7352e0c4d62bbac8aa69d95e40220a60967c4a19f9c4f65b4d118175f7ce9e3b"
     ports:
       - "5432:5432"
     expose:
