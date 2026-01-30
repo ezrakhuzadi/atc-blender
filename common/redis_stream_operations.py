@@ -245,7 +245,10 @@ class RedisStreamOperations:
             List[ActiveTrack]: A list of active tracks for the session.
         """
         pattern = f"active_track:{session_id}:*"
-        track_keys = self.redis.keys(pattern)
+        if hasattr(self.redis, "scan_iter"):
+            track_keys = self.redis.scan_iter(match=pattern)
+        else:
+            track_keys = self.redis.keys(pattern)
         active_tracks = []
         for track_key in track_keys:
             track_data = self.redis.hgetall(track_key)
@@ -258,11 +261,22 @@ class RedisStreamOperations:
                     if isinstance(value, bytes):
                         value = value.decode("utf-8")
                     field_data[key] = value
+
+                raw_observations = field_data.get("observations", "[]")
+                try:
+                    observations = json.loads(raw_observations)
+                except json.JSONDecodeError:
+                    try:
+                        observations = ast.literal_eval(raw_observations)
+                    except (ValueError, SyntaxError):
+                        observations = []
+                if not isinstance(observations, list):
+                    observations = []
                 active_track = ActiveTrack(
                     session_id=field_data.get("session_id", ""),
                     unique_aircraft_identifier=field_data.get("unique_aircraft_identifier", ""),
                     last_updated_timestamp=field_data.get("last_updated_timestamp", ""),
-                    observations=field_data.get("observations", "[]"),
+                    observations=observations,
                 )
                 active_tracks.append(active_track)
         logger.debug(f"Retrieved {len(active_tracks)} active tracks for session_id '{session_id}'")

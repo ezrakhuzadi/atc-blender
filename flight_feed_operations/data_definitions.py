@@ -77,10 +77,10 @@ class SingleAirtrafficObservation:
     lat_dd: float
     lon_dd: float
     altitude_mm: float
-    timestamp: int | None = None
     traffic_source: int
     source_type: int
     icao_address: str
+    timestamp: int | None = None
     metadata: dict = field(default_factory=dict)
     session_id: str | None = ""
 
