@@ -1,20 +1,17 @@
-import hashlib
 from dataclasses import asdict
+from typing import Any
+from collections.abc import Iterable
 
 import arrow
-from django.db.models import QuerySet
 from rtree import index
 
-from auth_helper.common import get_redis
-
 from .data_definitions import GeoFenceMetadata
-from .models import GeoFence
 
 
 class GeoFenceRTreeIndexFactory:
-    def __init__(self, index_name: str):
-        self.idx = index.Index(index_name)
-        self.r = get_redis()
+    def __init__(self):
+        # Use an in-memory index to avoid cross-worker contamination and stale on-disk state.
+        self.idx = index.Index()
 
     def add_box_to_index(
         self,
@@ -52,26 +49,25 @@ class GeoFenceRTreeIndexFactory:
         """
         self.idx.delete(id=enumerated_id, coordinates=(view[0], view[1], view[2], view[3]))
 
-    def generate_geo_fence_index(self, all_fences: QuerySet | list[GeoFence]) -> None:
+    def generate_geo_fence_index(self, all_fences: Iterable[Any]) -> None:
         """
         This method generates an RTree index of currently active operational geo-fences.
 
         Args:
-            all_fences (Union[QuerySet, List[GeoFence]]): A list or queryset of GeoFence objects to be indexed.
+            all_fences: An iterable of objects with `id` and `bounds` attributes to be indexed.
         """
         present = arrow.now()
         start_date = present.shift(days=-1).isoformat()
         end_date = present.shift(days=1).isoformat()
 
-        for fence in all_fences:
+        for enumerated_id, fence in enumerate(all_fences):
             fence_idx_str = str(fence.id)
-            fence_id = int(hashlib.sha256(fence_idx_str.encode("utf-8")).hexdigest(), 16) % 10**8
             view = [float(coord) for coord in fence.bounds.split(",")]
             # Swap the coordinates to store as latitude, longitude format
             view = [view[1], view[0], view[3], view[2]]
 
             self.add_box_to_index(
-                id=fence_id,
+                id=enumerated_id,
                 geo_fence_id=fence_idx_str,
                 view=view,
                 start_date=start_date,
@@ -79,17 +75,12 @@ class GeoFenceRTreeIndexFactory:
             )
 
     def clear_rtree_index(self):
-        """
-        Method to delete all boxes from the RTree index.
-        This method retrieves all GeoFence objects, calculates their unique IDs,
-        and deletes each corresponding box from the RTree index.
-        """
-        all_fences = GeoFence.objects.all()
-        for fence in all_fences:
-            fence_idx_str = str(fence.id)
-            fence_id = int(hashlib.sha256(fence_idx_str.encode("utf-8")).hexdigest(), 16) % 10**8
-            view = [float(coord) for coord in fence.bounds.split(",")]
-            self.delete_from_index(enumerated_id=fence_id, view=view)
+        """Clear the in-memory RTree index."""
+        try:
+            self.idx.close()
+        except Exception:
+            pass
+        self.idx = index.Index()
 
     def check_box_intersection(self, view_box: list[float]):
         """

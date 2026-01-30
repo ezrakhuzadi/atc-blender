@@ -1,10 +1,7 @@
-import hashlib
-
 import arrow
 from rtree import index
 from shapely.geometry import Polygon
 
-from auth_helper.common import get_redis
 from common.database_operations import FlightBlenderDatabaseReader
 from scd_operations.scd_data_definitions import Altitude, OpInttoCheckDetails, Time
 
@@ -41,9 +38,9 @@ class OperationalIntentComparisonFactory:
 
 
 class OperationalIntentsIndexFactory:
-    def __init__(self, index_name: str):
-        self.idx = index.Index(index_name)
-        self.r = get_redis()
+    def __init__(self):
+        # Use an in-memory index to avoid cross-worker contamination and stale on-disk state.
+        self.idx = index.Index()
 
     def add_box_to_index(
         self,
@@ -78,10 +75,8 @@ class OperationalIntentsIndexFactory:
         my_database_reader = FlightBlenderDatabaseReader()
         flight_declarations = my_database_reader.get_active_activated_flight_declarations()
 
-        for flight_declaration in flight_declarations:
+        for enumerated_id, flight_declaration in enumerate(flight_declarations):
             flight_id_str = str(flight_declaration.id)
-
-            enumerated_flight_id = int(hashlib.sha256(flight_id_str.encode("utf-8")).hexdigest(), 16) % 10**8
 
             split_view = flight_declaration.bounds.split(",")
             start_time = flight_declaration.start_datetime
@@ -89,7 +84,7 @@ class OperationalIntentsIndexFactory:
             view = [float(i) for i in split_view]
 
             self.add_box_to_index(
-                enumerated_id=enumerated_flight_id,
+                enumerated_id=enumerated_id,
                 flight_id=flight_id_str,
                 view=view,
                 start_time=start_time,
@@ -97,19 +92,12 @@ class OperationalIntentsIndexFactory:
             )
 
     def clear_rtree_index(self):
-        """Method to delete all boxes from the index"""
-
-        my_database_reader = FlightBlenderDatabaseReader()
-        flight_declarations = my_database_reader.get_active_activated_flight_declarations()
-
-        for flight_declaration in flight_declarations:
-            flight_id_str = str(flight_declaration.id)
-
-            enumerated_flight_id = int(hashlib.sha256(flight_id_str.encode("utf-8")).hexdigest(), 16) % 10**8
-
-            split_view = flight_declaration.bounds.split(",")
-            view = [float(i) for i in split_view]
-            self.delete_from_index(enumerated_id=enumerated_flight_id, view=view)
+        """Clear the in-memory RTree index."""
+        try:
+            self.idx.close()
+        except Exception:
+            pass
+        self.idx = index.Index()
 
     def close_index(self):
         """Method to delete / close index"""

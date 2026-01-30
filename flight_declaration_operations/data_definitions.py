@@ -1,9 +1,7 @@
 from dataclasses import dataclass
+from typing import Any
 
 from marshmallow import Schema, fields
-
-from flight_declaration_operations.models import FlightDeclaration
-from geo_fence_operations.models import GeoFence
 
 
 class CreateFlightDeclarationViaOperationalIntentRequestSchema(Schema):
@@ -86,8 +84,8 @@ class CreateFlightDeclarationRequestSchema(Schema):
 
 @dataclass
 class IntersectionCheckResult:
-    all_relevant_fences: list[GeoFence]
-    all_relevant_declarations: list[FlightDeclaration]
+    all_relevant_fences: list[Any]
+    all_relevant_declarations: list[Any]
     is_approved: bool
     declaration_state: int
 

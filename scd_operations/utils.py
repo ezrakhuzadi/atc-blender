@@ -208,7 +208,7 @@ class DSSAreaClearHandler:
 
         my_geo_json_converter.convert_volumes_to_geojson(volumes=[volume4D])
         view_rect_bounds = my_geo_json_converter.get_bounds()
-        my_rtree_helper = rtree_helper.OperationalIntentsIndexFactory(index_name=OPINT_INDEX_BASEPATH)
+        my_rtree_helper = rtree_helper.OperationalIntentsIndexFactory()
         my_rtree_helper.generate_active_flights_operational_intents_index()
         op_ints_exist = my_rtree_helper.check_op_ints_exist()
         all_existing_op_ints_in_area = []

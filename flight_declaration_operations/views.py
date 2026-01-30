@@ -145,7 +145,7 @@ class FlightDeclarationRequestValidator:
 
         if GeoFence.objects.filter(start_datetime__lte=start_datetime, end_datetime__gte=end_datetime).exists():
             all_fences_within_timelimits = GeoFence.objects.filter(start_datetime__lte=start_datetime, end_datetime__gte=end_datetime)
-            my_rtree_helper = rtree_geo_fence_helper.GeoFenceRTreeIndexFactory(index_name=GEOFENCE_INDEX_BASEPATH)
+            my_rtree_helper = rtree_geo_fence_helper.GeoFenceRTreeIndexFactory()
             my_rtree_helper.generate_geo_fence_index(all_fences=all_fences_within_timelimits)
             all_relevant_fences = my_rtree_helper.check_box_intersection(view_box=view_box)
             my_rtree_helper.clear_rtree_index()
@@ -163,7 +163,7 @@ class FlightDeclarationRequestValidator:
                 end_datetime__gte=start_datetime,
                 state__in=ACTIVE_OPERATIONAL_STATES,
             )
-            my_fd_rtree_helper = FlightDeclarationRTreeIndexFactory(index_name=FLIGHT_DECLARATION_INDEX_BASEPATH)
+            my_fd_rtree_helper = FlightDeclarationRTreeIndexFactory()
             my_fd_rtree_helper.generate_flight_declaration_index(all_flight_declarations=all_declarations_within_timelimits)
             all_relevant_declarations = my_fd_rtree_helper.check_flight_declaration_box_intersection(view_box=view_box)
             my_fd_rtree_helper.clear_rtree_index()
@@ -571,7 +571,7 @@ class FlightDeclarationCreateList(mixins.ListModelMixin, generics.GenericAPIView
         logger.info("Found %s flight declaration" % len(all_fd_within_timelimits))
 
         if view_port:
-            my_rtree_helper = FlightDeclarationRTreeIndexFactory(index_name=FLIGHT_DECLARATION_OPINT_INDEX_BASEPATH)
+            my_rtree_helper = FlightDeclarationRTreeIndexFactory()
             my_rtree_helper.generate_flight_declaration_index(all_flight_declarations=all_fd_within_timelimits)
             all_relevant_fences = my_rtree_helper.check_flight_declaration_box_intersection(view_box=view_port)
             relevant_id_set = [i["flight_declaration_id"] for i in all_relevant_fences]
