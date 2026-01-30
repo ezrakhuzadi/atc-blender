@@ -1,5 +1,12 @@
 #!/bin/bash
-FLIGHT_BLENDER_ROOT=.
+set -euo pipefail
+
+FLIGHT_BLENDER_ROOT="."
+
+RESET_VOLUMES=0
+if [ "${1:-}" = "--reset" ]; then
+    RESET_VOLUMES=1
+fi
 
 # Only copy .env.sample if .env doesn't exist
 if [ ! -f ".env" ] && [ -f ".env.sample" ]; then
@@ -10,15 +17,8 @@ elif [ ! -f ".env" ]; then
     exit 1
 fi
 
-chmod +x $FLIGHT_BLENDER_ROOT/entrypoints/with-database/entrypoint.sh 2>/dev/null
-chmod +x $FLIGHT_BLENDER_ROOT/entrypoints/no-database/entrypoint.sh 2>/dev/null
-
-# Stop local postgresql if running
-STATUS="$(systemctl is-active postgresql 2>/dev/null)"
-if [ "${STATUS}" = "active" ]; then
-    echo "Stopping local instance of postgresql..."
-    sudo systemctl stop postgresql
-fi
+chmod +x "${FLIGHT_BLENDER_ROOT}/entrypoints/with-database/entrypoint.sh" 2>/dev/null || true
+chmod +x "${FLIGHT_BLENDER_ROOT}/entrypoints/no-database/entrypoint.sh" 2>/dev/null || true
 
 # Create the external network if it doesn't exist
 if ! docker network inspect interop_ecosystem_network >/dev/null 2>&1; then
@@ -26,18 +26,13 @@ if ! docker network inspect interop_ecosystem_network >/dev/null 2>&1; then
     docker network create interop_ecosystem_network
 fi
 
-# Clean up any existing containers and volumes (safely)
-docker compose down 2>/dev/null
+cd "${FLIGHT_BLENDER_ROOT}"
 
-CONTAINERS=$(docker ps -a -q 2>/dev/null)
-if [ -n "$CONTAINERS" ]; then
-    docker rm -f $CONTAINERS
+if [ "${RESET_VOLUMES}" -eq 1 ]; then
+    echo "Resetting Flight Blender compose stack (project-scoped): removing containers + volumes..."
+    docker compose down -v --remove-orphans
+else
+    docker compose down --remove-orphans
 fi
 
-VOLUMES=$(docker volume ls -q 2>/dev/null)
-if [ -n "$VOLUMES" ]; then
-    docker volume rm $VOLUMES
-fi
-
-cd $FLIGHT_BLENDER_ROOT
 docker compose up --build
