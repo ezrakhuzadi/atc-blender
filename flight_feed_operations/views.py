@@ -88,7 +88,6 @@ def set_air_traffic(request, session_id):
         JsonResponse: A JSON response indicating the result of the processing.
 
     Raises:
-        AssertionError: If the Content-Type of the request is not 'application/json'.
         KeyError: If required keys are missing in the request data.
 
     The function performs the following steps:
@@ -120,13 +119,13 @@ def set_air_traffic(request, session_id):
         }
     """
 
-    try:
-        assert request.headers["Content-Type"] == "application/json"
-    except AssertionError:
+    content_type = request.headers.get("Content-Type") or getattr(request, "content_type", "") or ""
+    mime_type = content_type.split(";", 1)[0].strip().lower()
+    if mime_type != "application/json":
         msg = {"message": "Unsupported Media Type"}
         return JsonResponse(msg, status=415)
-    else:
-        req = request.data
+
+    req = request.data
 
     try:
         observations = req["observations"]

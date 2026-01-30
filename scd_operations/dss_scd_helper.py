@@ -111,18 +111,15 @@ class FlightPlanningDataValidator:
         self.flight_planning_data = incoming_flight_planning_data
 
     def validate_flight_planning_state(self) -> bool:
-        try:
-            assert self.flight_planning_data.uas_state in [
-                "Nominal",
-                "OffNominal",
-                "Contingent",
-                "NotSpecified",
-            ]
-        except AssertionError as ae:
-            logger.error(ae)
+        if self.flight_planning_data.uas_state not in [
+            "Nominal",
+            "OffNominal",
+            "Contingent",
+            "NotSpecified",
+        ]:
+            logger.error("Invalid UAS state: %s", self.flight_planning_data.uas_state)
             return False
-        else:
-            return True
+        return True
 
     def validate_flight_planning_off_nominals(self) -> bool:
         if self.flight_planning_data.usage_state in ["Planned", "InUse"] and bool(self.flight_planning_data.off_nominal_volumes):
@@ -145,17 +142,14 @@ class OperationalIntentValidator:
         self.operational_intent_data = operational_intent_data
 
     def validate_operational_intent_state(self) -> bool:
-        try:
-            assert self.operational_intent_data.state in [
-                "Accepted",
-                "Activated",
-                "Nonconforming",
-            ]
-        except AssertionError as ae:
-            logger.error(ae)
+        if self.operational_intent_data.state not in [
+            "Accepted",
+            "Activated",
+            "Nonconforming",
+        ]:
+            logger.error("Invalid operational intent state: %s", self.operational_intent_data.state)
             return False
-        else:
-            return True
+        return True
 
     def validate_operational_intent_state_off_nominals(self) -> bool:
         if self.operational_intent_data.state in ["Accepted", "Activated"] and bool(self.operational_intent_data.off_nominal_volumes):
@@ -177,17 +171,14 @@ class PeerOperationalIntentValidator:
 
     def validate_individual_operational_intent(self, operational_intent: OperationalIntentDetailsUSSResponse) -> bool:
         all_checks_passed: list[bool] = []
-        try:
-            assert operational_intent.reference.state in VALID_OPERATIONAL_INTENT_STATES
-        except AssertionError:
+
+        if operational_intent.reference.state not in VALID_OPERATIONAL_INTENT_STATES:
             logger.debug(f"Error in received operational intent state, it is not valid {operational_intent.reference.state}")
             all_checks_passed.append(False)
         else:
             all_checks_passed.append(True)
 
-        try:
-            assert isinstance(operational_intent.details.priority, int)
-        except AssertionError:
+        if not isinstance(operational_intent.details.priority, int):
             logger.debug(f"Error in received operational intent priority, it is not one an integer {operational_intent.details.priority}")
             all_checks_passed.append(False)
         else:
@@ -973,11 +964,10 @@ class SCDOperations:
         my_authorization_helper = AuthorityCredentialsGetter()
         if not audience:
             audience = env.get("DSS_SELF_AUDIENCE", "localhost")
-        try:
-            assert audience
-        except AssertionError:
+
+        if not audience:
             logger.error("Error in getting Authority Access Token DSS_SELF_AUDIENCE is not set in the environment")
-            return
+            return {"error": "DSS_SELF_AUDIENCE is not set"}
         auth_token = {}
         try:
             auth_token = my_authorization_helper.get_cached_credentials(audience=audience, token_type="scd")

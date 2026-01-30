@@ -67,11 +67,15 @@ class ConstraintOperations:
         # This method checks the USS network for any other volume in the airspace and queries the individual USS for data
 
         auth_token = self.get_auth_token()
+        access_token = auth_token.get("access_token") if isinstance(auth_token, dict) else None
+        if not access_token:
+            logger.error("Constraints auth token missing; cannot query DSS")
+            return []
         # Query the DSS for operational intentns
         query_constraints_url = f"{self.dss_base_url}/dss/v1/constraint_references/query"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": "Bearer " + auth_token["access_token"],
+            "Authorization": "Bearer " + access_token,
         }
 
         flight_blender_base_url = resolve_flightblender_base_url()
@@ -94,10 +98,17 @@ class ConstraintOperations:
             except Exception as re:
                 logger.error("Error in getting constraint for the volume %s " % re)
             else:
-                # The DSS returned operational intent references as a list
-                _dss_constraint_references = query_constraints_request.json()
+                if query_constraints_request.status_code != 200:
+                    logger.error("DSS query for constraints returned %s: %s", query_constraints_request.status_code, query_constraints_request.text)
+                    continue
+                try:
+                    # The DSS returned constraint references as a list
+                    _dss_constraint_references = query_constraints_request.json()
+                except Exception as exc:
+                    logger.error("Failed to parse DSS constraints response: %s", exc)
+                    continue
                 logger.debug(f"DSS Response {_dss_constraint_references}")
-                constraint_references = _dss_constraint_references["constraint_references"]
+                constraint_references = _dss_constraint_references.get("constraint_references", [])
             _constraint_references = []
 
             # Query the operational intent reference details
@@ -170,9 +181,14 @@ class ConstraintOperations:
                     uss_audience = generate_audience_from_base_url(base_url=current_uss_base_url)
                     uss_auth_token = self.get_auth_token(audience=uss_audience)
                     logger.debug(f"Auth Token {uss_auth_token}")
+                    uss_access_token = uss_auth_token.get("access_token") if isinstance(uss_auth_token, dict) else None
+                    if not uss_access_token:
+                        logger.error("Constraints auth token missing for peer USS %s", current_uss_base_url)
+                        constraints_retrieved = False
+                        continue
                     uss_headers = {
                         "Content-Type": "application/json",
-                        "Authorization": "Bearer " + uss_auth_token["access_token"],
+                        "Authorization": "Bearer " + uss_access_token,
                     }
 
                     parsed_url = urlparse(current_uss_base_url)
@@ -254,10 +270,9 @@ class ConstraintOperations:
         my_authorization_helper = dss_auth_helper.AuthorityCredentialsGetter()
         if not audience:
             audience = env.get("DSS_SELF_AUDIENCE", "")
-        try:
-            assert audience
-        except AssertionError:
+        if not audience:
             logger.error("Error in getting Authority Access Token DSS_SELF_AUDIENCE is not set in the environment")
+            return {"error": "DSS_SELF_AUDIENCE is not set"}
         auth_token = {}
         try:
             auth_token = my_authorization_helper.get_cached_credentials(audience=audience, token_type="constraints")

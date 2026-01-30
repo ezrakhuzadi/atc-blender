@@ -236,9 +236,7 @@ class RemoteIDOperations:
         audience = env.get("DSS_SELF_AUDIENCE", "000")
         error = None
 
-        try:
-            assert audience
-        except AssertionError:
+        if not audience:
             logger.error("Error in getting Authority Access Token DSS_SELF_AUDIENCE is not set in the environment")
             return isa_creation_response
 
@@ -250,9 +248,7 @@ class RemoteIDOperations:
         else:
             error = auth_token.get("error")
 
-        try:
-            assert error is None
-        except AssertionError:
+        if error is not None:
             return isa_creation_response
 
         # A token from authority was received,
@@ -277,12 +273,10 @@ class RemoteIDOperations:
             logger.error("Error in posting to DSS URL %s " % re)
             return isa_creation_response
 
-        try:
-            assert dss_r.status_code == 200
-            isa_creation_response.created = 1
-        except AssertionError:
+        if dss_r.status_code != 200:
             logger.error("Error in creating ISA in the DSS %s" % dss_r.text)
             return isa_creation_response
+        isa_creation_response.created = 1
 
         dss_response = dss_r.json()
         dss_response_service_area = dss_response["service_area"]
@@ -386,9 +380,7 @@ class RemoteIDOperations:
         audience = env.get("DSS_SELF_AUDIENCE", "000")
         error = None
 
-        try:
-            assert audience
-        except AssertionError:
+        if not audience:
             logger.error("Error in getting Authority Access Token DSS_SELF_AUDIENCE is not set in the environment")
             return subscription_response
 
@@ -400,9 +392,7 @@ class RemoteIDOperations:
         else:
             error = auth_token.get("error")
 
-        try:
-            assert error is None
-        except AssertionError:
+        if error is not None:
             return subscription_response
         else:
             # A token from authority was received,
@@ -464,10 +454,7 @@ class RemoteIDOperations:
                     reason="request_failed",
                 )
 
-            try:
-                assert dss_r.status_code == 200
-                subscription_response.created = True
-            except AssertionError:
+            if dss_r.status_code != 200:
                 logger.error("Error in creating subscription in the DSS %s" % dss_r.text)
                 return self._fallback_subscription(
                     request_uuid=request_uuid,
@@ -480,6 +467,7 @@ class RemoteIDOperations:
                     reason="dss_rejected",
                 )
             else:
+                subscription_response.created = True
                 dss_response = dss_r.json()
 
                 service_areas = dss_response["service_areas"]
@@ -729,47 +717,46 @@ class RemoteIDOperations:
                         headers=headers,
                     )
 
-                    try:
-                        assert flight.get("current_state") is not None
-                    except AssertionError:
+                    flight_current_state = flight.get("current_state")
+                    if flight_current_state is None:
                         logger.error("There is no current_state provided by SP on the flights url %s" % rid_query_url)
                         logger.debug(f"{json.dumps(flight)}")
-                    else:
-                        flight_current_state = flight["current_state"]
-                        position = flight_current_state["position"]
+                        continue
 
-                        recent_positions = flight["recent_positions"] if "recent_positions" in flight.keys() else []
+                    position = flight_current_state["position"]
 
-                        flight_metadata = {
-                            "id": flight_id,
-                            "simulated": flight["simulated"],
-                            "aircraft_type": flight["aircraft_type"],
-                            "subscription_id": subscription_id,
-                            "current_state": flight_current_state,
-                            "recent_positions": recent_positions,
+                    recent_positions = flight["recent_positions"] if "recent_positions" in flight.keys() else []
+
+                    flight_metadata = {
+                        "id": flight_id,
+                        "simulated": flight["simulated"],
+                        "aircraft_type": flight["aircraft_type"],
+                        "subscription_id": subscription_id,
+                        "current_state": flight_current_state,
+                        "recent_positions": recent_positions,
+                    }
+                    # logger.info("Writing flight remote-id data..")
+                    if {"lat", "lng", "alt"} <= position.keys():
+                        # check if lat / lng / alt existis
+                        single_observation = {
+                            "session_id": subscription_id,
+                            "icao_address": flight_id,
+                            "traffic_source": 11,
+                            "source_type": 1,
+                            "lat_dd": position["lat"],
+                            "lon_dd": position["lng"],
+                            "altitude_mm": position["alt"],
+                            "metadata": flight_metadata,
                         }
-                        # logger.info("Writing flight remote-id data..")
-                        if {"lat", "lng", "alt"} <= position.keys():
-                            # check if lat / lng / alt existis
-                            single_observation = {
-                                "session_id": subscription_id,
-                                "icao_address": flight_id,
-                                "traffic_source": 11,
-                                "source_type": 1,
-                                "lat_dd": position["lat"],
-                                "lon_dd": position["lng"],
-                                "altitude_mm": position["alt"],
-                                "metadata": flight_metadata,
-                            }
-                            single_observation = from_dict(
-                                data_class=SingleAirtrafficObservation,
-                                data=single_observation,
-                            )
-                            logger.debug("Writing flight remote-id data..")
-                            my_database_writer.write_flight_observation(single_observation=single_observation)
+                        single_observation = from_dict(
+                            data_class=SingleAirtrafficObservation,
+                            data=single_observation,
+                        )
+                        logger.debug("Writing flight remote-id data..")
+                        my_database_writer.write_flight_observation(single_observation=single_observation)
 
-                        else:
-                            logger.error("Error in received flights data: %{url}s ".format(**flight))
+                    else:
+                        logger.error("Error in received flights data: %{url}s ".format(**flight))
 
             else:
                 logs_dict = {

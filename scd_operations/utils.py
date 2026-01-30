@@ -146,8 +146,10 @@ class OperatorRegistrationNumberValidator:
         ]
 
     def gen_checksum(self, raw_id):
-        assert raw_id.isalnum()
-        assert len(raw_id) == 15
+        if not raw_id.isalnum():
+            raise ValueError("raw_id must be alphanumeric")
+        if len(raw_id) != 15:
+            raise ValueError("raw_id must be 15 characters long")
         d = {v: k for k, v in enumerate(self.registration_number_code_points)}
         numeric_base_id = list(map(d.__getitem__, list(raw_id)))
         # Multiplication factors for each digit depending on its position
@@ -180,7 +182,10 @@ class OperatorRegistrationNumberValidator:
         # op_registration_suffix = self.operator_registration_number[3:]
         random_three_alnum_string = self.operator_registration_number[-3:]
 
-        computed_checksum = self.gen_checksum(base_id + random_three_alnum_string)
+        try:
+            computed_checksum = self.gen_checksum(base_id + random_three_alnum_string)
+        except ValueError:
+            return False
 
         if computed_checksum != checksum:
             return False

@@ -61,13 +61,16 @@ from .url_safety import validate_public_url
 
 INDEX_NAME = "geofence_proc"
 
+def _request_is_json(request: HttpRequest) -> bool:
+    content_type = request.headers.get("Content-Type") or getattr(request, "content_type", "") or ""
+    mime_type = content_type.split(";", 1)[0].strip().lower()
+    return mime_type == "application/json"
+
 
 @api_view(["PUT"])
 @requires_scopes([FLIGHTBLENDER_WRITE_SCOPE])
 def set_geo_fence(request: HttpRequest):
-    try:
-        assert request.headers["Content-Type"] == "application/json"
-    except AssertionError:
+    if not _request_is_json(request):
         msg = {"message": "Unsupported Media Type"}
         return HttpResponse(
             json.dumps(msg),
@@ -124,9 +127,7 @@ def set_geo_fence(request: HttpRequest):
 @api_view(["POST"])
 @requires_scopes([FLIGHTBLENDER_WRITE_SCOPE])
 def set_geozone(request):
-    try:
-        assert request.headers["Content-Type"] == "application/json"
-    except AssertionError:
+    if not _request_is_json(request):
         msg = {"message": "Unsupported Media Type"}
         return HttpResponse(
             json.dumps(msg),
