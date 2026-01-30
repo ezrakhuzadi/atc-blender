@@ -33,12 +33,15 @@ class TrafficDataFuser:
 
         fwd_azimuth, back_azimuth, adjacent_point_distance_mts = self.geod.inv(first_point.lng, first_point.lat, second_point.lng, second_point.lat)
 
-        speed_mts_per_sec = adjacent_point_distance_mts / delta_time_secs
+        if delta_time_secs <= 0:
+            speed_mts_per_sec = 0.0
+        else:
+            speed_mts_per_sec = adjacent_point_distance_mts / delta_time_secs
         speed_mts_per_sec = float("{:.2f}".format(speed_mts_per_sec))
 
         if fwd_azimuth < 0:
             fwd_azimuth = 360 + fwd_azimuth
-        if delta_time_secs == 0:
+        if delta_time_secs <= 0:
             vertical_speed_mps = 0.0
         else:
             vertical_speed_mps = (second_point.alt - first_point.alt) / delta_time_secs
@@ -115,7 +118,7 @@ class TrafficDataFuser:
             except Exception:  # noqa: BLE001
                 delta_time_secs = None
             if not delta_time_secs or delta_time_secs <= 0:
-                delta_time_secs = 1.0
+                delta_time_secs = 0.0
             speed_mps, bearing_degrees, vertical_speed_mps = self.generate_flight_speed_bearing(
                 adjacent_points=[
                     one_before_latest_observation_lat_lng_point,
