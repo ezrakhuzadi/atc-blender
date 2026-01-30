@@ -5,16 +5,17 @@ import json
 import uuid
 from dataclasses import asdict
 from decimal import Decimal
+from os import environ as env
 
 import arrow
 import pyproj
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from implicitdict import ImplicitDict
 from loguru import logger
-from marshmallow import ValidationError
+from marshmallow import ValidationError as MarshmallowValidationError
 from rest_framework import generics, mixins, status
 from rest_framework.decorators import api_view
 from rest_framework.renderers import JSONRenderer
@@ -56,6 +57,7 @@ from .serializers import (
     GeoZoneChecksResponseSerializer,
 )
 from .tasks import download_geozone_source, write_geo_zone
+from .url_safety import validate_public_url
 
 INDEX_NAME = "geofence_proc"
 
@@ -77,7 +79,7 @@ def set_geo_fence(request: HttpRequest):
 
     try:
         geo_fence_request_data = geofence_create_request.load(geo_fence_request_data)
-    except ValidationError as err:
+    except MarshmallowValidationError as err:
         return HttpResponse(
             JSONRenderer().render(err.messages),
             status=status.HTTP_400_BAD_REQUEST,
@@ -313,9 +315,25 @@ class GeoZoneSourcesOperations(generics.GenericAPIView):
         url_validator = URLValidator()
         try:
             url_validator(geo_zone_url_details.https_source.url)
-        except ValidationError:
+        except DjangoValidationError:
             ga_import_response = GeoAwarenessTestStatus(
                 result=GeoAwarenessImportResponseEnum.Unsupported, message="There was an error in the url provided"
+            )
+            return JsonResponse(
+                json.loads(json.dumps(ga_import_response, cls=EnhancedJSONEncoder)),
+                status=200,
+            )
+
+        allow_http = bool(int(env.get("IS_DEBUG", "0")))
+        ok, reason = validate_public_url(
+            geo_zone_url_details.https_source.url,
+            allow_http=allow_http,
+            require_https=True,
+        )
+        if not ok:
+            ga_import_response = GeoAwarenessTestStatus(
+                result=GeoAwarenessImportResponseEnum.Rejected,
+                message=f"The provided URL is not allowed ({reason}).",
             )
             return JsonResponse(
                 json.loads(json.dumps(ga_import_response, cls=EnhancedJSONEncoder)),
