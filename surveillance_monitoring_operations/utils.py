@@ -93,31 +93,45 @@ class TrafficDataFuser:
             # For simplicity, we take the last observation as the latest
             latest_observation = fused_observations[-1]
             one_before_latest_observation = fused_observations[-2] if len(fused_observations) > 1 else latest_observation
+            latest_alt_m = latest_observation.altitude_mm / 1000.0
+            one_before_latest_alt_m = one_before_latest_observation.altitude_mm / 1000.0
             latest_observation_lat_lng_point = LatLangAltPoint(
-                lat=latest_observation.lat_dd, lng=-latest_observation.lon_dd, alt=latest_observation.altitude_mm / 1000.0
+                lat=latest_observation.lat_dd,
+                lng=latest_observation.lon_dd,
+                alt=latest_alt_m,
             )
             one_before_latest_observation_lat_lng_point = LatLangAltPoint(
                 lat=one_before_latest_observation.lat_dd,
-                lng=-one_before_latest_observation.lon_dd,
-                alt=one_before_latest_observation.altitude_mm / 1000.0,
+                lng=one_before_latest_observation.lon_dd,
+                alt=one_before_latest_alt_m,
             )
             # Calculate speed and bearing
+            delta_time_secs = None
+            try:
+                if latest_observation.timestamp is not None and one_before_latest_observation.timestamp is not None:
+                    delta_time_secs = (
+                        arrow.get(latest_observation.timestamp) - arrow.get(one_before_latest_observation.timestamp)
+                    ).total_seconds()
+            except Exception:  # noqa: BLE001
+                delta_time_secs = None
+            if not delta_time_secs or delta_time_secs <= 0:
+                delta_time_secs = 1.0
             speed_mps, bearing_degrees, vertical_speed_mps = self.generate_flight_speed_bearing(
                 adjacent_points=[
                     one_before_latest_observation_lat_lng_point,
                     latest_observation_lat_lng_point,
                 ],
-                delta_time_secs=(arrow.get(latest_observation.timestamp) - arrow.get(one_before_latest_observation.timestamp)).total_seconds(),
+                delta_time_secs=delta_time_secs,
             )
             # Create AircraftPosition
             aircraft_position = AircraftPosition(
                 lat=latest_observation.lat_dd,
-                lng=-latest_observation.lon_dd,
-                alt=latest_observation.altitude_mm,
+                lng=latest_observation.lon_dd,
+                alt=latest_alt_m,
                 accuracy_h="SA1mps",
                 accuracy_v="SA3mps",
                 extrapolated=True,
-                pressure_altitude=latest_observation.altitude_mm,
+                pressure_altitude=latest_alt_m,
             )
             speed_accuracy = SpeedAccuracy("SA1mps")
             aircraft_state = AircraftState(

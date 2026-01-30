@@ -162,6 +162,7 @@ def set_air_traffic(request, session_id):
             lat_dd=validated_data["lat_dd"],
             lon_dd=validated_data["lon_dd"],
             altitude_mm=validated_data["altitude_mm"],
+            timestamp=validated_data["timestamp"],
             traffic_source=validated_data["traffic_source"],
             source_type=validated_data["source_type"],
             icao_address=validated_data["icao_address"],
@@ -228,10 +229,15 @@ def get_air_traffic(request, session_id):
     all_traffic_observations = []
     for icao_address in latest_observations:
         observation = latest_observations[icao_address]
+        try:
+            timestamp = arrow.get(observation.created_at).int_timestamp
+        except Exception:  # noqa: BLE001
+            timestamp = None
         so = SingleAirtrafficObservation(
             lat_dd=observation.latitude_dd,
             lon_dd=observation.longitude_dd,
             altitude_mm=observation.altitude_mm,
+            timestamp=timestamp,
             traffic_source=observation.traffic_source,
             source_type=observation.source_type,
             icao_address=icao_address,

@@ -385,11 +385,19 @@ class RedisStreamOperations:
                 except (json.JSONDecodeError, TypeError):
                     metadata = {}
 
+            timestamp = None
+            if "timestamp" in field_data:
+                try:
+                    timestamp = int(field_data["timestamp"])
+                except (TypeError, ValueError):
+                    timestamp = None
+
             # Create SingleAirtrafficObservation with required fields
             observation = SingleAirtrafficObservation(
                 lat_dd=float(field_data.get("lat_dd", 0.0)),
                 lon_dd=float(field_data.get("lon_dd", 0.0)),
                 altitude_mm=float(field_data.get("altitude_mm", 0.0)),
+                timestamp=timestamp,
                 traffic_source=int(field_data.get("traffic_source", 0)),
                 source_type=int(field_data.get("source_type", 0)),
                 icao_address=str(field_data.get("icao_address", "")),

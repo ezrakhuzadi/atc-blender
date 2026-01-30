@@ -56,6 +56,15 @@ def write_incoming_air_traffic_data(observation: str):
         return
     logger.debug(f"Parsed observation: {single_air_traffic_observation}")
 
+    # Ensure timestamp is present and numeric before writing to Redis.
+    try:
+        timestamp = int(single_air_traffic_observation.timestamp) if single_air_traffic_observation.timestamp is not None else None
+    except (TypeError, ValueError):
+        timestamp = None
+    if timestamp is None:
+        timestamp = arrow.utcnow().int_timestamp
+    single_air_traffic_observation.timestamp = timestamp
+
     logger.info("Writing observation..")
 
     my_database_writer.write_flight_observation(single_air_traffic_observation)
@@ -144,11 +153,16 @@ def start_opensky_network_stream(view_port: str, session_id: str):
                 flight_df["baro_altitude"] = flight_df["baro_altitude"].astype(float)
 
                 for _, row in flight_df.iterrows():
+                    try:
+                        timestamp = int(row["time_position"]) if row["time_position"] != "No Data" else arrow.utcnow().int_timestamp
+                    except (TypeError, ValueError):
+                        timestamp = arrow.utcnow().int_timestamp
                     so = SingleAirtrafficObservation(
                         session_id=session_id,
                         lat_dd=row["lat"],
                         lon_dd=row["long"],
                         altitude_mm=row["baro_altitude"],
+                        timestamp=timestamp,
                         traffic_source=2,
                         source_type=1,
                         icao_address=str(row["icao24"]),
