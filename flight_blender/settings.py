@@ -39,6 +39,18 @@ def env_bool(key: str, default: bool = False) -> bool:
         return False
     return default
 
+def env_int(key: str, default: int) -> int:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    value = str(raw).strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("IS_DEBUG", False)
 
@@ -98,6 +110,19 @@ if DEBUG:
     ALLOWED_HOSTS = ["*"]
 else:
     ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "openutm.net").split(",")
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
+    SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", True)
+    CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", True)
+
+    SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 31536000)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", True)
+
+    SECURE_REFERRER_POLICY = (os.getenv("SECURE_REFERRER_POLICY") or "strict-origin-when-cross-origin").strip()
+    SECURE_CONTENT_TYPE_NOSNIFF = env_bool("SECURE_CONTENT_TYPE_NOSNIFF", True)
+    X_FRAME_OPTIONS = (os.getenv("X_FRAME_OPTIONS") or "DENY").strip()
 
 # Application definition
 INSTALLED_APPS = [
