@@ -1,6 +1,20 @@
 name: Linting
 on: [push, pull_request]
 jobs:
+  repo_hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on tracked Redis dump artifacts
+        run: |
+          set -euo pipefail
+          dumps="$(git ls-files '*.rdb' || true)"
+          if [ -n "${dumps}" ]; then
+            echo "Tracked .rdb dumps are not allowed:"
+            echo "${dumps}"
+            exit 1
+          fi
+
   ruff:
     runs-on: ubuntu-latest
     steps:
