@@ -4,6 +4,49 @@ from geojson import Feature, FeatureCollection, Polygon
 from shapely.geometry import box as shapely_box
 
 
+DEFAULT_MAX_VIEW_QUERY_LENGTH = 200
+
+
+class ViewPortParseError(ValueError):
+    pass
+
+
+def _parse_view_floats(view: str, *, max_length: int) -> list[float]:
+    if view is None:
+        raise ViewPortParseError("view is required")
+    if len(view) > max_length:
+        raise ViewPortParseError(f"view is too long (max {max_length} characters)")
+
+    parts = [part.strip() for part in view.split(",")]
+    if len(parts) != 4:
+        raise ViewPortParseError("view must have exactly 4 comma-separated numbers")
+
+    try:
+        coords = [float(part) for part in parts]
+    except ValueError as exc:
+        raise ViewPortParseError("view must contain only numbers") from exc
+
+    return coords
+
+
+def parse_view_lat_lng(view: str, *, max_length: int = DEFAULT_MAX_VIEW_QUERY_LENGTH) -> list[float]:
+    """Parse a `view` query param in RID ordering: `lat1,lng1,lat2,lng2`."""
+    coords = _parse_view_floats(view, max_length=max_length)
+    if not check_view_port(coords):
+        raise ViewPortParseError("view coordinates are out of bounds")
+    return coords
+
+
+def parse_view_minx_miny(view: str, *, max_length: int = DEFAULT_MAX_VIEW_QUERY_LENGTH) -> list[float]:
+    """Parse a `view` query param in `minx,miny,maxx,maxy` ordering (lng/lat order)."""
+    coords = _parse_view_floats(view, max_length=max_length)
+    # Validate using the shared bounds checker which expects lat/lng ordering.
+    lat_lng_order = [coords[1], coords[0], coords[3], coords[2]]
+    if not check_view_port(lat_lng_order):
+        raise ViewPortParseError("view coordinates are out of bounds")
+    return coords
+
+
 def build_view_port_box(view_port_coords) -> shapely_box:
     box = shapely_box(
         view_port_coords[0],

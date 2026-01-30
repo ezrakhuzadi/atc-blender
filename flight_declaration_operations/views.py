@@ -12,6 +12,7 @@ from loguru import logger
 from marshmallow.exceptions import ValidationError
 from rest_framework import generics, mixins, status
 from rest_framework.decorators import api_view
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from shapely.geometry import shape
 
 from auth_helper.utils import requires_scopes
@@ -583,7 +584,12 @@ class FlightDeclarationCreateList(mixins.ListModelMixin, generics.GenericAPIView
         start_date = self.request.query_params.get("start_date", None)
         end_date = self.request.query_params.get("end_date", None)
         view = self.request.query_params.get("view", None)
-        view_port = [float(i) for i in view.split(",")] if view else []
+        view_port = []
+        if view:
+            try:
+                view_port = view_port_ops.parse_view_minx_miny(view)
+            except view_port_ops.ViewPortParseError as exc:
+                raise DRFValidationError({"view": str(exc)}) from exc
 
         return self.get_relevant_flight_declaration(view_port=view_port, start_date=start_date, end_date=end_date)
 

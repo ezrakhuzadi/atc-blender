@@ -364,8 +364,8 @@ def get_display_data(request):
     my_database_reader = FlightBlenderDatabaseReader()
     try:
         view = request.query_params["view"]
-        view_port = [float(i) for i in view.split(",")]
-    except Exception:
+        view_port = view_port_ops.parse_view_lat_lng(view)
+    except (KeyError, view_port_ops.ViewPortParseError):
         incorrect_parameters = {"message": "A view bbox is necessary with four values: minx, miny, maxx and maxy"}
         return HttpResponse(
             json.dumps(incorrect_parameters),

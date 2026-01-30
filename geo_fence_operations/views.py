@@ -18,6 +18,7 @@ from loguru import logger
 from marshmallow import ValidationError as MarshmallowValidationError
 from rest_framework import generics, mixins, status
 from rest_framework.decorators import api_view
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.renderers import JSONRenderer
 from shapely.geometry import Point, shape
 from shapely.ops import unary_union
@@ -31,6 +32,7 @@ from common.data_definitions import (
 )
 from common.utils import EnhancedJSONEncoder
 from flight_declaration_operations.pagination import StandardResultsSetPagination
+from rid_operations import view_port_ops
 
 from . import rtree_geo_fence_helper
 from .buffer_helper import toFromUTM
@@ -227,7 +229,10 @@ class GeoFenceList(mixins.ListModelMixin, generics.GenericAPIView):
         view = self.request.query_params.get("view", None)
         view_port = []
         if view:
-            view_port = [float(i) for i in view.split(",")]
+            try:
+                view_port = view_port_ops.parse_view_lat_lng(view)
+            except view_port_ops.ViewPortParseError as exc:
+                raise DRFValidationError({"view": str(exc)}) from exc
 
         responses = self.get_relevant_geo_fence(view_port=view_port, start_date=start_date, end_date=end_date)
         return responses
@@ -277,7 +282,10 @@ class GeospatialMapList(mixins.ListModelMixin, generics.GenericAPIView):
         view = self.request.query_params.get("view", None)
         view_port = []
         if view:
-            view_port = [float(i) for i in view.split(",")]
+            try:
+                view_port = view_port_ops.parse_view_lat_lng(view)
+            except view_port_ops.ViewPortParseError as exc:
+                raise DRFValidationError({"view": str(exc)}) from exc
 
         responses = self.get_relevant_geo_fence(view_port=view_port, start_date=start_date, end_date=end_date)
         return responses
