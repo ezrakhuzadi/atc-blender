@@ -20,6 +20,7 @@ from jwcrypto import jwk, jws
 from jwcrypto.common import json_encode
 
 from auth_helper.common import get_redis
+from common.http_download import DownloadSettings, fetch_json_url
 
 from .models import SignedTelmetryPublicKey
 
@@ -136,6 +137,12 @@ class MessageVerifier:
         r = get_redis()
         s = requests.Session()
 
+        allow_http = bool(int(env.get("IS_DEBUG", "0")))
+        download_settings = DownloadSettings(
+            allow_http=allow_http,
+            require_https=True,
+        )
+
         public_keys = {}
         all_public_keys = SignedTelmetryPublicKey.objects.filter(is_active=1)
         for current_public_key in all_public_keys:
@@ -145,16 +152,19 @@ class MessageVerifier:
                 k = r.get(redis_jwks_key)
                 key = json.loads(k)
             else:
-                response = s.get(current_public_key.url)
-                jwks_data = response.json()
+                jwks_data = fetch_json_url(current_public_key.url, settings=download_settings, session=s)
                 jwk = None
+                if jwks_data:
+                    if isinstance(jwks_data.get("keys"), list):
+                        jwk = next((item for item in jwks_data["keys"] if item.get("kid") == current_kid), None)
+                    elif jwks_data.get("kid") == current_kid:
+                        jwk = jwks_data
 
-                if "keys" in jwks_data:
-                    jwk = next((item for item in jwks_data["keys"] if item["kid"] == current_kid), None)
-                elif "kid" in jwks_data and current_kid == jwks_data["kid"]:
-                    jwk = jwks_data
-
-                key = jwk if jwk else {"000"}
+                if not isinstance(jwk, dict):
+                    logger.warning("No matching JWKS key found for kid={} at {}", current_kid, current_public_key.url)
+                    key = {}
+                else:
+                    key = jwk
 
                 r.set(redis_jwks_key, json.dumps(key))
                 r.expire(redis_jwks_key, 60000)
