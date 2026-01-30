@@ -32,6 +32,33 @@ def _now_s() -> float:
     return time.time()
 
 
+def _normalize_issuer(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    issuer = value.strip()
+    if not issuer:
+        return ""
+    if issuer.startswith(("http://", "https://")):
+        issuer = issuer.rstrip("/")
+    return issuer
+
+
+def _parse_issuer_allowlist(raw: str | None) -> set[str]:
+    if not isinstance(raw, str) or not raw.strip():
+        return set()
+    issuers: set[str] = set()
+    for entry in raw.split(","):
+        normalized = _normalize_issuer(entry)
+        if normalized:
+            issuers.add(normalized)
+    return issuers
+
+
+def _issuer_allowed(issuer: str | None, allowed: set[str]) -> bool:
+    normalized = _normalize_issuer(issuer)
+    return bool(normalized and normalized in allowed)
+
+
 def _build_public_keys(jwks: dict) -> dict:
     keys = {}
     for jwk in jwks.get("keys", []):
@@ -149,6 +176,16 @@ def requires_scopes(required_scopes, allow_any: bool = False):
             IS_DEBUG = int(env.get("IS_DEBUG", 0))
             PASSPORT_URL = env.get("PASSPORT_URL", "http://local.test:9000")
             DSS_AUTH_JWKS_ENDPOINT = env.get("DSS_AUTH_JWKS_ENDPOINT", "http://local.test:9000/.well-known/jwks.json")
+            PASSPORT_ISSUER = env.get("PASSPORT_ISSUER", "") or PASSPORT_URL
+            DSS_AUTH_ISSUER = env.get("DSS_AUTH_ISSUER", "") or env.get("DSS_SELF_AUDIENCE", "")
+            JWT_ALLOWED_ISSUERS = env.get("JWT_ALLOWED_ISSUERS", "")
+
+            allowed_issuers = {
+                _normalize_issuer(PASSPORT_ISSUER),
+                _normalize_issuer(DSS_AUTH_ISSUER),
+            }
+            allowed_issuers.discard("")
+            allowed_issuers |= _parse_issuer_allowlist(JWT_ALLOWED_ISSUERS)
             # remove the trailing slash if present
             if PASSPORT_URL.endswith("/"):
                 PASSPORT_URL = PASSPORT_URL[:-1]
@@ -173,6 +210,16 @@ def requires_scopes(required_scopes, allow_any: bool = False):
                 logger.warning("BYPASS_AUTH_TOKEN_VERIFICATION is set but IS_DEBUG is false; ignoring bypass.")
             if bypass_enabled:
                 return handle_bypass_verification(token, required_scopes, f, *args, **kwargs)
+
+            if not allowed_issuers:
+                logger.error("JWT issuer allowlist is empty; refusing to validate tokens without issuer validation.")
+                return JsonResponse(
+                    {
+                        "detail": "Token issuer validation is not configured",
+                        "hint": "Set PASSPORT_ISSUER and/or DSS_AUTH_ISSUER (or JWT_ALLOWED_ISSUERS) to the allowlist of accepted JWT issuers.",
+                    },
+                    status=500,
+                )
 
             try:
                 _, passport_public_keys = _get_jwks_cached(
@@ -232,6 +279,14 @@ def requires_scopes(required_scopes, allow_any: bool = False):
                     {"detail": "Invalid token", "error details": f"{token_error}"},
                     status=401,
                 )
+
+            if not _issuer_allowed(decoded.get("iss"), allowed_issuers):
+                logger.warning(f"Token issuer rejected: {decoded.get('iss')}")
+                return JsonResponse(
+                    {"detail": "Invalid token issuer"},
+                    status=401,
+                )
+
             decoded_scopes_set = set(decoded.get("scope", "").split())
             if (allow_any and decoded_scopes_set & set(required_scopes)) or set(required_scopes).issubset(decoded_scopes_set):
                 return f(*args, **kwargs)
