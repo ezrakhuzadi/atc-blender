@@ -1,6 +1,5 @@
 import hashlib
 import json
-import time
 import uuid
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta
@@ -236,9 +235,6 @@ def get_rid_data(request, subscription_id):
         subscription_record = my_database_reader.get_rid_subscription_record_by_subscription_id(subscription_id=subscription_id_str)
         if subscription_record.flight_details:
             flights_dict = json.loads(subscription_record.flight_details)
-        logger.info("Sleeping 2 seconds..")
-        time.sleep(2)
-
     if bool(flights_dict):
         # Get the last observation of the flight telemetry
         obs_helper = flight_stream_helper.ObservationReadOperations()
@@ -418,9 +414,6 @@ def get_display_data(request):
             )
 
             run_ussp_polling_for_rid.delay(session_id=request_id, end_time=subscription_end_time)
-
-            logger.info("Sleeping 2 seconds..")
-            time.sleep(2)
 
         # Keep only the latest message
 

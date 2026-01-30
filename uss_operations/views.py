@@ -1,5 +1,4 @@
 import json
-import time
 import uuid
 from dataclasses import asdict
 from enum import Enum
@@ -423,8 +422,6 @@ def get_uss_flights(request):
     if (view_port_diagonal) > 7:
         view_port_too_large_msg = GenericErrorResponseMessage(message="The requested view %s rectangle is too large" % view)
         return JsonResponse(json.loads(json.dumps(asdict(view_port_too_large_msg))), status=413)
-
-    time.sleep(0.5)
 
     # Get the last observation of the flight telemetry
     obs_helper = flight_stream_helper.ObservationReadOperations(view_port_box=view_box)
